@@ -1,0 +1,21 @@
+{
+  "name": "master-workers-sqs",
+  "version": "1.0.0",
+  "engines": {
+    "node": "22.11.0"
+  },
+  "main": "index.js",
+  "scripts": {
+    "start": "NODE_ENV=development node server.js",
+    "test": "NODE_ENV=test jest"
+  },
+  "keywords": [],
+  "author": "Vishwas Sahu",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "aws-sdk": "2.1692.0",
+    "dotenv": "16.4.7",
+    "nconf": "0.12.1"
+  }
+}
