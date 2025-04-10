@@ -1,4 +1,3 @@
-// consumer.js - listens for dynamic assignments
 const AWS = require('aws-sdk')
 const path = require('path')
 const nconf = require('nconf')
@@ -19,6 +18,11 @@ let currentQueueUrl = null
 let hasNotifiedDone = false
 
 async function processMessage(message) {
+  if (!currentQueueUrl) {
+    console.warn('Skipping delete — queueUrl is null')
+    return
+  }
+  
   try {
     console.log(`Consumer ${process.pid} processing:`, message.Body)
     await new Promise(resolve => setTimeout(resolve, 3000))
@@ -38,7 +42,7 @@ async function processMessage(message) {
 }
 
 async function pollMessages() {
-  if (!currentQueueUrl || activeMessages >= CONCURRENCY_LIMIT) return
+  if (!currentQueueUrl || !currentQueueId || hasNotifiedDone || activeMessages >= CONCURRENCY_LIMIT) return
 
   try {
     const data = await sqs.receiveMessage({

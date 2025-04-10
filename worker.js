@@ -1,4 +1,3 @@
-// worker.js - Manages a dynamic pool of sqs consumers
 const { fork } = require('child_process')
 const { MongoClient, ObjectId } = require('mongodb')
 const path = require('path')
@@ -47,7 +46,7 @@ async function startWorkerManager() {
             })
 
             console.log(`Assigned queue ${queueId} to consumer PID ${consumer.pid}`)
-          } else if (consumers.length < MAX_CONSUMERS) {
+          } else if ((consumers.length - idleConsumers.size) < MAX_CONSUMERS) {
             const consumerIndex = consumers.length
             const consumer = fork(path.join(__dirname, 'consumer.js'))
 
