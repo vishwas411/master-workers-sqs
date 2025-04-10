@@ -1,15 +1,9 @@
+// consumer.js - listens for dynamic assignments
 const AWS = require('aws-sdk')
 const path = require('path')
 const nconf = require('nconf')
-const queueUrl = process.env.QUEUE_URL
-
-if (!queueUrl) {
-  console.error('No QUEUE_URL provided to consumer')
-  process.exit(1)
-}
 
 nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
-console.log(`Consumer ${process.pid} started for queue: ${queueUrl}`)
 
 const sqs = new AWS.SQS({
   region: nconf.get('AWS_REGION'),
@@ -18,62 +12,69 @@ const sqs = new AWS.SQS({
   endpoint: nconf.get('AWS_SQS_ENDPOINT')
 })
 
-const CONCURRENCY_LIMIT = nconf.get('CONCURRENCY_LIMIT') || 5 // Max concurrent message processing
-let activeMessages = 0 // Track number of currently processing messages
+const CONCURRENCY_LIMIT = nconf.get('CONCURRENCY_LIMIT') || 5
+let activeMessages = 0
+let currentQueueId = null
+let currentQueueUrl = null
+let consumerIndex = null
+let hasNotifiedDone = false
 
-console.log(`Consumer ${process.pid} started. Listening to SQS: ${queueUrl}`)
-
-// Function to process a message
 async function processMessage(message) {
   try {
-    console.log(`Consumer ${process.pid} processing message:`, message.Body)
-    
-    // Simulate message processing time
+    console.log(`Consumer ${process.pid} processing:`, message.Body)
     await new Promise(resolve => setTimeout(resolve, 3000))
 
-    // Delete the message from the queue after processing
     await sqs.deleteMessage({
-      QueueUrl: queueUrl,
+      QueueUrl: currentQueueUrl,
       ReceiptHandle: message.ReceiptHandle
     }).promise()
 
-    console.log(`Consumer ${process.pid} finished processing message:`, message.Body)
-  } catch (error) {
-    console.error(`Error processing message in Consumer ${process.pid}:`, error)
+    console.log(`Consumer ${process.pid} done:`, message.Body)
+  } catch (err) {
+    console.error('Error processing message:', err)
   } finally {
-    activeMessages-- // Reduce active message count
-    pollMessages() // Fetch next message if slots are available
+    activeMessages--
+    pollMessages()
   }
 }
 
-// Function to poll messages while maintaining concurrency
 async function pollMessages() {
-  if (activeMessages >= CONCURRENCY_LIMIT) {
-    return // Don't poll if at concurrency limit
-  }
+  if (!currentQueueUrl || activeMessages >= CONCURRENCY_LIMIT) return
 
   try {
     const data = await sqs.receiveMessage({
-      QueueUrl: queueUrl,
-      MaxNumberOfMessages: Math.min(CONCURRENCY_LIMIT - activeMessages, 10), // Fetch up to 10 messages
+      QueueUrl: currentQueueUrl,
+      MaxNumberOfMessages: Math.min(CONCURRENCY_LIMIT - activeMessages, 10),
       WaitTimeSeconds: 5,
-      VisibilityTimeout: 10 // Message remains hidden for 10s while processing
+      VisibilityTimeout: 10
     }).promise()
 
-    if (data.Messages) {
-      for (const message of data.Messages) {
-        if (activeMessages >= CONCURRENCY_LIMIT) break // Stop if we hit the limit
-
-        activeMessages++ // Increase active message count
-        processMessage(message) // Process message in parallel
+    if (data.Messages && data.Messages.length > 0) {
+      for (const msg of data.Messages) {
+        if (activeMessages >= CONCURRENCY_LIMIT) break
+        activeMessages++
+        processMessage(msg)
       }
+    } else if (activeMessages === 0 && !hasNotifiedDone) {
+      process.send({ type: 'done', queueId: currentQueueId, consumerPid: process.pid })
+      currentQueueId = null
+      currentQueueUrl = null
+      hasNotifiedDone = true
     }
-  } catch (error) {
-    console.error(`Error receiving messages in Worker ${process.pid}:`, error)
-  } finally {
-    setTimeout(pollMessages, 1000) // Continue polling
+  } catch (err) {
+    console.error('Polling error:', err)
   }
+
+  setTimeout(pollMessages, 1000)
 }
 
-// Start polling
-pollMessages()
+process.on('message', msg => {
+  if (msg.type === 'assign') {
+    currentQueueId = msg.queueId
+    currentQueueUrl = msg.queueUrl
+    consumerIndex = msg.consumerIndex
+    hasNotifiedDone = false
+    console.log(`Consumer ${process.pid} assigned queue ${currentQueueId}`)
+    pollMessages()
+  }
+})
