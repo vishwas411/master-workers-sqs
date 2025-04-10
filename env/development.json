@@ -6,7 +6,7 @@
     "MONGODB_URI": "mongodb://localhost:27017",
     "MONGODB_NAME": "masterworkers",
     "CONCURRENCY_LIMIT": 5,
-    "MAX_CONSUMERS": 5,
+    "MAX_LOAD": 5,
     "CONSUMER_USAGE_LIMIT": 5,
     "WORKER_INSTANCES": 1
   }
