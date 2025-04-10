@@ -9,7 +9,7 @@ const MONGO_URI = nconf.get('MONGODB_URI')
 const DB_NAME = nconf.get('MONGODB_NAME')
 const COLLECTION_NAME = 'queues'
 
-const MAX_CONSUMERS = parseInt(nconf.get('MAX_CONSUMERS') || 5)
+const MAX_LOAD = parseInt(nconf.get('MAX_LOAD') || 5)
 const MAX_USAGE = parseInt(nconf.get('CONSUMER_USAGE_LIMIT') || 5)
 
 const consumers = []
@@ -46,7 +46,7 @@ async function startWorkerManager() {
             })
 
             console.log(`Assigned queue ${queueId} to consumer PID ${consumer.pid}`)
-          } else if ((consumers.length - idleConsumers.size) < MAX_CONSUMERS) {
+          } else if ((consumers.length - idleConsumers.size) < MAX_LOAD) {
             const consumerIndex = consumers.length
             const consumer = fork(path.join(__dirname, 'consumer.js'))
 
