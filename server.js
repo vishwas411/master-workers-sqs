@@ -1,3 +1,4 @@
+// server.js - Launch mode controller
 const { spawn } = require('child_process')
 const path = require('path')
 const nconf = require('nconf')
@@ -5,12 +6,20 @@ const nconf = require('nconf')
 const env = process.env.NODE_ENV || 'development'
 nconf.file(path.join(__dirname, `env/${env}.json`))
 
-console.log(`Server started. Launching Worker Process...`)
+const mode = nconf.get('MODE') || 'MW'
+console.log(`Server starting in MODE=${mode}`)
 
-const workerProcess = spawn('node', [path.join(__dirname, 'worker.js')], {
-  stdio: 'inherit'
-})
+function launch(name, file) {
+  const proc = spawn('node', [path.join(__dirname, file)], { stdio: 'inherit' })
+  proc.on('exit', code => {
+    console.log(`${name} process exited with code ${code}`)
+  })
+}
 
-workerProcess.on('exit', (code) => {
-  console.log(`Worker process exited with code ${code}`)
-})
+if (mode.includes('M')) {
+  launch('Master', 'master.js')
+}
+
+if (mode.includes('W')) {
+  launch('Worker', 'worker.js')
+}
