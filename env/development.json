@@ -7,6 +7,7 @@
     "MONGODB_NAME": "masterworkers",
     "CONCURRENCY_LIMIT": 5,
     "MAX_CONSUMERS": 5,
-    "CONSUMER_USAGE_LIMIT": 5
+    "CONSUMER_USAGE_LIMIT": 5,
+    "WORKER_INSTANCES": 1
   }
   

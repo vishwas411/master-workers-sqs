@@ -16,7 +16,6 @@ const CONCURRENCY_LIMIT = nconf.get('CONCURRENCY_LIMIT') || 5
 let activeMessages = 0
 let currentQueueId = null
 let currentQueueUrl = null
-let consumerIndex = null
 let hasNotifiedDone = false
 
 async function processMessage(message) {

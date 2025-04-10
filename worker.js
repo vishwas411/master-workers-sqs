@@ -11,10 +11,12 @@ const DB_NAME = nconf.get('MONGODB_NAME')
 const COLLECTION_NAME = 'queues'
 
 const MAX_CONSUMERS = parseInt(nconf.get('MAX_CONSUMERS') || 5)
-const consumers = [] // array of child processes
-const idleConsumers = new Set() // consumer index
-const activeAssignments = new Map() // queueId -> consumer index
-const consumerUsageCount = new Map() // pid -> assignment count
+const MAX_USAGE = parseInt(nconf.get('CONSUMER_USAGE_LIMIT') || 5)
+
+const consumers = []
+const idleConsumers = new Set()
+const activeAssignments = new Map()
+const consumerUsageCount = new Map()
 
 async function startWorkerManager() {
   const client = new MongoClient(MONGO_URI)
@@ -22,34 +24,30 @@ async function startWorkerManager() {
   const db = client.db(DB_NAME)
   const collection = db.collection(COLLECTION_NAME)
 
-  console.log('Worker Manager started. Polling DB for queues...')
+  console.log(`Worker Manager (PID ${process.pid}) started. Polling DB for assigned queues...`)
 
   async function pollDB() {
     try {
-      const queues = await collection.find({}).toArray()
+      const queues = await collection.find({ worker: `${process.pid}` }).toArray()
 
       for (const queue of queues) {
         const queueId = queue._id.toString()
 
-        // If this queue is not already being processed
         if (!activeAssignments.has(queueId)) {
-          // Reuse idle consumer if available
           if (idleConsumers.size > 0) {
             const consumerIndex = Array.from(idleConsumers)[0]
             const consumer = consumers[consumerIndex]
             idleConsumers.delete(consumerIndex)
             activeAssignments.set(queueId, consumerIndex)
 
-            consumers[consumerIndex].send({
+            consumer.send({
               type: 'assign',
               queueId,
-              queueUrl: queue.queueUrl,
-              consumerIndex
+              queueUrl: queue.queueUrl
             })
 
             console.log(`Assigned queue ${queueId} to consumer PID ${consumer.pid}`)
           } else if (consumers.length < MAX_CONSUMERS) {
-            // Create a new consumer if under the max limit
             const consumerIndex = consumers.length
             const consumer = fork(path.join(__dirname, 'consumer.js'))
 
@@ -73,7 +71,6 @@ async function startWorkerManager() {
                   console.error(`Failed to delete queue ${doneQueueId}:`, err)
                 }
 
-                const MAX_USAGE = parseInt(nconf.get('CONSUMER_USAGE_LIMIT') || 5)
                 if (usage >= MAX_USAGE) {
                   console.log(`Terminating consumer PID ${donePid} after ${MAX_USAGE} assignments`)
                   const c = consumers.find(c => c.pid === donePid)
@@ -96,8 +93,7 @@ async function startWorkerManager() {
             consumer.send({
               type: 'assign',
               queueId,
-              queueUrl: queue.queueUrl,
-              consumerIndex
+              queueUrl: queue.queueUrl
             })
 
             console.log(`Forked and assigned queue ${queueId} to new consumer PID ${consumer.pid}`)
@@ -114,7 +110,24 @@ async function startWorkerManager() {
   pollDB()
 }
 
-startWorkerManager().catch(err => {
-  console.error('Worker manager failed to start:', err)
-  process.exit(1)
-})
+async function registerWorkerInstance() {
+  try {
+    const client = new MongoClient(MONGO_URI)
+    await client.connect()
+    const db = client.db(DB_NAME)
+    await db.collection('workers').insertOne({
+      pid: process.pid,
+      startedAt: new Date()
+    })
+    console.log(`Worker process registered with PID ${process.pid}`)
+  } catch (err) {
+    console.error('Failed to register worker in DB:', err)
+  }
+}
+
+registerWorkerInstance()
+  .then(() => startWorkerManager())
+  .catch(err => {
+    console.error('Worker manager failed to start:', err)
+    process.exit(1)
+  })
