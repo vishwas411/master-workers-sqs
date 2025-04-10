@@ -24,11 +24,11 @@ async function startWorkerManager() {
   const db = client.db(DB_NAME)
   const collection = db.collection(COLLECTION_NAME)
 
-  console.log('Worker Manager started. Polling DB for queues...')
+  console.log(`Worker Manager (PID ${process.pid}) started. Polling DB for assigned queues...`)
 
   async function pollDB() {
     try {
-      const queues = await collection.find({}).toArray()
+      const queues = await collection.find({ worker: `${process.pid}` }).toArray()
 
       for (const queue of queues) {
         const queueId = queue._id.toString()

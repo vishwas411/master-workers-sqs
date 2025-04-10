@@ -6,7 +6,9 @@
   },
   "main": "index.js",
   "scripts": {
-    "start": "NODE_ENV=development node server.js",
+    "start": "NODE_ENV=development MODE=MW node server.js",
+    "start:m": "NODE_ENV=development MODE=M node server.js",
+    "start:w": "NODE_ENV=development MODE=W node server.js",
     "test": "NODE_ENV=test jest"
   },
   "keywords": [],
