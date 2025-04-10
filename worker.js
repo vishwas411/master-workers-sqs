@@ -5,8 +5,8 @@ const nconf = require('nconf')
 
 nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
 
-const MONGO_URI = 'mongodb://localhost:27017'
-const DB_NAME = 'masterworkers'
+const MONGO_URI = nconf.get('MONGODB_URI')
+const DB_NAME = nconf.get('MONGODB_NAME')
 const COLLECTION_NAME = 'queues'
 
 const activeConsumers = new Map() // key = queue._id.toString(), value = child process
