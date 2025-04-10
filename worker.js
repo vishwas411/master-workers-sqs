@@ -1,73 +1,66 @@
-const AWS = require('aws-sdk')
-const nconf = require('nconf')
+const { MongoClient } = require('mongodb')
+const { fork } = require('child_process')
 const path = require('path')
+const nconf = require('nconf')
 
 nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
 
-const sqs = new AWS.SQS({
-  region: nconf.get('AWS_REGION'),
-  accessKeyId: nconf.get('AWS_ACCESS_KEY_ID'),
-  secretAccessKey: nconf.get('AWS_SECRET_ACCESS_KEY'),
-  endpoint: 'http://localhost:4566' // Pointing to LocalStack
-})
+const MONGO_URI = nconf.get('MONGODB_URI')
+const DB_NAME = nconf.get('MONGODB_NAME')
+const COLLECTION_NAME = 'queues'
 
-const queueUrl = nconf.get('SQS_QUEUE_URL')
-const CONCURRENCY_LIMIT = 5 // Maximum parallel processing
-let activeMessages = 0 // Track number of currently processing messages
+const activeConsumers = new Map() // key = queue._id.toString(), value = child process
 
-console.log(`Worker ${process.pid} started. Listening to SQS: ${queueUrl}`)
+async function startWorkerManager() {
+  const client = new MongoClient(MONGO_URI)
+  await client.connect()
+  const db = client.db(DB_NAME)
+  const collection = db.collection(COLLECTION_NAME)
 
-// Function to process a message
-async function processMessage(message) {
-  try {
-    console.log(`Worker ${process.pid} processing message:`, message.Body)
-    
-    // Simulate message processing time
-    await new Promise(resolve => setTimeout(resolve, 3000))
+  console.log('Worker Manager started. Polling DB for queue assignments...')
 
-    // Delete the message from the queue after processing
-    await sqs.deleteMessage({
-      QueueUrl: queueUrl,
-      ReceiptHandle: message.ReceiptHandle
-    }).promise()
+  async function pollDB() {
+    try {
+      const queues = await collection.find({}).toArray()
 
-    console.log(`Worker ${process.pid} finished processing message:`, message.Body)
-  } catch (error) {
-    console.error(`Error processing message in Worker ${process.pid}:`, error)
-  } finally {
-    activeMessages-- // Reduce active message count
-    pollMessages() // Fetch next message if slots are available
-  }
-}
+      for (const q of queues) {
+        const queueId = q._id.toString()
 
-// Function to poll messages while maintaining concurrency
-async function pollMessages() {
-  if (activeMessages >= CONCURRENCY_LIMIT) {
-    return // Don't poll if at concurrency limit
-  }
+        if (!activeConsumers.has(queueId)) {
+          const queueUrl = q.queueUrl
+          console.log(`Forking consumer for queue ID: ${queueId}, URL: ${queueUrl}`)
 
-  try {
-    const data = await sqs.receiveMessage({
-      QueueUrl: queueUrl,
-      MaxNumberOfMessages: Math.min(CONCURRENCY_LIMIT - activeMessages, 10), // Fetch up to 10 messages
-      WaitTimeSeconds: 5,
-      VisibilityTimeout: 10 // Message remains hidden for 10s while processing
-    }).promise()
+          const consumer = fork(path.join(__dirname, 'consumer.js'), [], {
+            env: {
+              ...process.env,
+              QUEUE_ID: queueId,
+              QUEUE_URL: queueUrl
+            }
+          })
 
-    if (data.Messages) {
-      for (const message of data.Messages) {
-        if (activeMessages >= CONCURRENCY_LIMIT) break // Stop if we hit the limit
+          activeConsumers.set(queueId, consumer)
 
-        activeMessages++ // Increase active message count
-        processMessage(message) // Process message in parallel
+          consumer.on('exit', code => {
+            console.log(`Consumer for ID ${queueId} exited with code ${code}`)
+            activeConsumers.delete(queueId)
+          })
+
+          consumer.on('message', msg => {
+            console.log(`Consumer [${queueId}] message:`, msg)
+          })
+        }
       }
+    } catch (err) {
+      console.error('Error polling DB:', err)
     }
-  } catch (error) {
-    console.error(`Error receiving messages in Worker ${process.pid}:`, error)
-  } finally {
-    setTimeout(pollMessages, 1000) // Continue polling
+
+    setTimeout(pollDB, 1000)
   }
+
+  pollDB()
 }
 
-// Start polling
-pollMessages()
+startWorkerManager().catch(err => {
+  console.error('Failed to start worker manager:', err)
+  process.exit(1)
+})
