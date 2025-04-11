@@ -4,7 +4,6 @@ const { fork } = require('child_process')
 const path = require('path')
 const nconf = require('nconf')
 
-// Load test config
 nconf.file(path.join(__dirname, '../env/test.json'))
 const MONGO_URI = nconf.get('MONGODB_URI')
 const DB_NAME = nconf.get('MONGODB_NAME')
