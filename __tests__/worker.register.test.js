@@ -9,7 +9,7 @@ nconf.file(path.join(__dirname, '../env/test.json'))
 const MONGO_URI = nconf.get('MONGODB_URI')
 const DB_NAME = nconf.get('MONGODB_NAME')
 
-describe.only('Worker Registration (Integration)', function () {
+describe('Worker Registration (Integration)', function () {
   this.timeout(10000)
 
   let client, db
