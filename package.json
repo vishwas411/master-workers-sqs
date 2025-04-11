@@ -9,7 +9,7 @@
     "start": "NODE_ENV=development MODE=MW node server.js",
     "start:m": "NODE_ENV=development MODE=M node server.js",
     "start:w": "NODE_ENV=development MODE=W node server.js",
-    "test": "NODE_ENV=test jest"
+    "test": "mocha \"__tests__/**/*.test.js\""
   },
   "keywords": [],
   "author": "Vishwas Sahu",
@@ -21,5 +21,8 @@
     "express": "5.1.0",
     "mongodb": "6.15.0",
     "nconf": "0.12.1"
+  },
+  "devDependencies": {
+    "mocha": "11.1.0"
   }
 }

@@ -81,3 +81,8 @@ process.on('message', msg => {
     pollMessages()
   }
 })
+
+module.exports = {
+  pollMessages,
+  processMessage
+}
