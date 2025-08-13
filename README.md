@@ -4,7 +4,7 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 
 ## 🚀 Recent Major Updates
 
-- **Jobs Tracking System:** Complete lifecycle tracking for all queue processing operations with status monitoring and performance metrics
+- **Jobs Tracking System:** Complete lifecycle tracking with automatic cleanup - job documents auto-purge after 5 days
 - **Dynamic Concurrency Control:** Consumers now fetch queue-specific concurrency from database instead of using fixed environment variables
 - **Enhanced Assignment Collection:** Assignment documents include queue ObjectId references for proper data relationships
 - **AWS SDK v3:** Upgraded to modern, modular AWS SDK for better performance and maintenance
@@ -99,6 +99,7 @@ Comprehensive tracking for all queue processing operations with real-time status
 - **Performance Metrics:** Message counts, processing duration, timing analytics
 - **Process Attribution:** Full traceability of which worker/consumer handled each job
 - **Efficient Indexing:** Compound indexes on `{status, createdAt}` and `{queueUrl, status}` for fast queries
+- **Automatic Cleanup:** TTL index automatically purges job documents after 5 days from last modification
 
 ## 💡 Use Cases
 
