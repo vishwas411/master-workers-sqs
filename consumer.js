@@ -40,8 +40,14 @@ async function processMessage(message) {
   } catch (err) {
     console.error('Error processing message:', err)
   } finally {
-    activeMessages--
-    pollMessages()
+      activeMessages--
+  
+  // Notify worker that a message was processed
+  if (currentAssignmentId) {
+    process.send({ type: 'message_processed', assignmentId: currentAssignmentId, messageId: message.MessageId, consumerPid: process.pid })
+  }
+  
+  pollMessages()
   }
 }
 
@@ -113,6 +119,10 @@ process.on('message', async msg => {
     queueConcurrency = await fetchQueueConcurrency(currentQueueUrl)
     
     console.log(`Consumer ${process.pid} assigned assignment ${currentAssignmentId}`)
+    
+    // Notify worker that processing has started
+    process.send({ type: 'started', assignmentId: currentAssignmentId, consumerPid: process.pid })
+    
     pollMessages()
   }
 })

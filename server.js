@@ -65,6 +65,19 @@ async function ensureIndexes() {
       { unique: true, background: true }
     )
     console.log('Ensured unique index on queues.queueUrl')
+
+    // Create compound indexes for jobs collection
+    await db.collection('jobs').createIndex(
+      { status: 1, createdAt: -1 },
+      { background: true }
+    )
+    console.log('Ensured compound index on jobs.status and jobs.createdAt')
+    
+    await db.collection('jobs').createIndex(
+      { queueUrl: 1, status: 1 },
+      { background: true }
+    )
+    console.log('Ensured compound index on jobs.queueUrl and jobs.status')
     
     await client.close()
   } catch (err) {

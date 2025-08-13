@@ -55,7 +55,42 @@ async function startWorkerManager() {
             consumerUsageCount.set(consumer.pid, 1)
 
             consumer.on('message', async msg => {
-              if (msg.type === 'done') {
+              const client = new MongoClient(MONGO_URI)
+              await client.connect()
+              const db = client.db(DB_NAME)
+              const jobsCol = db.collection('jobs')
+
+              if (msg.type === 'started') {
+                const assignmentData = await collection.findOne({ _id: new ObjectId(msg.assignmentId) })
+                if (assignmentData) {
+                  console.log(`Consumer PID ${msg.consumerPid} started processing assignment ${msg.assignmentId}`)
+                  
+                  // Update job status to running
+                  await jobsCol.updateOne(
+                    { queueUrl: assignmentData.queueUrl, status: 'queued' },
+                    { 
+                      $set: { 
+                        status: 'running',
+                        startedAt: new Date(),
+                        'processor.consumerPid': msg.consumerPid,
+                        lastModified: new Date()
+                      }
+                    }
+                  )
+                }
+              } else if (msg.type === 'message_processed') {
+                // Update message count
+                const assignmentData = await collection.findOne({ _id: new ObjectId(msg.assignmentId) })
+                if (assignmentData) {
+                  await jobsCol.updateOne(
+                    { queueUrl: assignmentData.queueUrl },
+                    { 
+                      $inc: { messageCount: 1 },
+                      $set: { lastModified: new Date() }
+                    }
+                  )
+                }
+              } else if (msg.type === 'done') {
                 const donePid = msg.consumerPid
                 const doneAssignmentId = msg.assignmentId
                 const usage = consumerUsageCount.get(donePid) || 1
@@ -64,12 +99,26 @@ async function startWorkerManager() {
                 activeAssignments.delete(doneAssignmentId)
 
                 try {
+                  const assignmentData = await collection.findOne({ _id: new ObjectId(doneAssignmentId) })
+                  if (assignmentData) {
+                    // Update job status to completed
+                    await jobsCol.updateOne(
+                      { queueUrl: assignmentData.queueUrl, status: 'running' },
+                      { 
+                        $set: { 
+                          status: 'completed',
+                          endedAt: new Date(),
+                          lastModified: new Date()
+                        }
+                      }
+                    )
+                  }
+
                   await collection.deleteOne({ _id: new ObjectId(doneAssignmentId) })
                   console.log(`Deleted assignment ${doneAssignmentId} from DB`)
                 } catch (err) {
                   console.error(`Failed to delete assignment ${doneAssignmentId}:`, err)
                 }
-
                 if (usage >= MAX_USAGE) {
                   console.log(`Terminating consumer PID ${donePid} after ${MAX_USAGE} assignments`)
                   const c = consumers.find(c => c.pid === donePid)
@@ -80,6 +129,8 @@ async function startWorkerManager() {
                   consumerUsageCount.set(donePid, usage + 1)
                 }
               }
+              
+              await client.close()
             })
 
             consumer.on('exit', () => {

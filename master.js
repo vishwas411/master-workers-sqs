@@ -18,6 +18,7 @@ async function assignQueueToLeastLoadedWorker(queueDocument) {
 
   const assignmentsCol = db.collection('assignments')
   const workersCol = db.collection('workers')
+  const jobsCol = db.collection('jobs')
 
   const queueName = queueDocument.name
   const queueUrl = queueDocument.queueUrl
@@ -29,13 +30,17 @@ async function assignQueueToLeastLoadedWorker(queueDocument) {
 
   if (existingQueue) {
     console.log(`Queue '${queueName}' is already assigned to worker ${existingQueue.worker}`)
+  
+    const existingJob = await jobsCol.findOne({ queueUrl: existingQueue.queueUrl, status: { $in: ['queued', 'running'] } })
+    
     await client.close()
     return {
       success: true,
       alreadyAssigned: true,
       queueUrl: existingQueue.queueUrl,
       worker: existingQueue.worker,
-      queueId: existingQueue.queueId
+      queueId: existingQueue.queueId,
+      jobId: existingJob?._id
     }
   }
 
@@ -83,22 +88,42 @@ async function assignQueueToLeastLoadedWorker(queueDocument) {
       assignmentDoc.queueId = queueId
     }
 
-    const result = await assignmentsCol.insertOne(assignmentDoc)
+    const jobDoc = {
+      queueName,
+      queueUrl,
+      queueId,
+      status: 'queued',
+      messageCount: 0,
+      processor: {
+        workerPid: selectedWorker,
+        consumerPid: null
+      },
+      createdAt: new Date(),
+      startedAt: null,
+      endedAt: null,
+      lastModified: new Date()
+    }
 
-    console.log(`Assigned queue '${queueName}' to worker ${selectedWorker} ${queueId ? '(queueId: ' + queueId + ')' : '(no queueId reference)'}`)
+    const assignmentResult = await assignmentsCol.insertOne(assignmentDoc)
+    const jobResult = await jobsCol.insertOne(jobDoc)
+
+    console.log(`Assigned queue '${queueName}' to worker ${selectedWorker} ${queueId ? '(queueId: ' + queueId + ')' : '(no queueId reference)'} | Job ID: ${jobResult.insertedId}`)
     await client.close()
-    return { success: true, assignedTo: selectedWorker, queueUrl, queueId }
+    return { success: true, assignedTo: selectedWorker, queueUrl, queueId, jobId: jobResult.insertedId }
   } catch (err) {
     if (err.code === 11000) {
       const existingQueue = await assignmentsCol.findOne({ queueUrl })
       console.log(`Race condition detected: Queue '${queueName}' was assigned to worker ${existingQueue.worker} by concurrent request`)
       await client.close()
+      const existingJob = await jobsCol.findOne({ queueUrl: existingQueue.queueUrl, status: { $in: ['queued', 'running'] } })
+      
       return {
         success: true,
         alreadyAssigned: true,
         queueUrl: existingQueue.queueUrl,
         worker: existingQueue.worker,
-        queueId: existingQueue.queueId || null
+        queueId: existingQueue.queueId,
+        jobId: existingJob._id
       }
     }
 
@@ -124,6 +149,7 @@ app.post('/assign-queue', async (req, res) => {
 
   res.json(result)
 })
+
 
 app.listen(PORT, () => {
   console.log(`Master API running at http://localhost:${PORT}`)
