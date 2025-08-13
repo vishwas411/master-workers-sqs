@@ -77,7 +77,7 @@ process.on('message', msg => {
     currentQueueUrl = msg.queueUrl
     consumerIndex = msg.consumerIndex
     hasNotifiedDone = false
-    console.log(`Consumer ${process.pid} assigned queue ${currentQueueId}`)
+    console.log(`Consumer ${process.pid} assigned assignment ${currentQueueId}`)
     pollMessages()
   }
 })

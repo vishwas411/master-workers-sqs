@@ -26,8 +26,8 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 
 ## 🗄️ MongoDB Collections
 
-### `queues`
-Tracks which queues are currently assigned to which workers.
+### `assignments`
+Tracks queue assignment documents that map queues to workers during processing.
 
 ### `workers`
 Tracks active worker PIDs and their start time.

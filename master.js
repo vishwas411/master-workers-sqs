@@ -17,10 +17,10 @@ async function assignQueueToLeastLoadedWorker(queueName) {
   const db = client.db(DB_NAME)
 
   
-  const queuesCol = db.collection('queues')
+  const assignmentsCol = db.collection('assignments')
   const workersCol = db.collection('workers')
 
-  const existingQueue = await queuesCol.findOne({ queueUrl: `http://localhost:4566/000000000000/${queueName}` })
+  const existingQueue = await assignmentsCol.findOne({ queueUrl: `http://localhost:4566/000000000000/${queueName}` })
 
   if (existingQueue) {
     console.log(`Queue '${queueName}' is already assigned to worker ${existingQueue.worker}`)
@@ -40,14 +40,14 @@ async function assignQueueToLeastLoadedWorker(queueName) {
     return { success: false, message: 'No workers found' }
   }
 
-  // Count queues per worker
-  const assignments = await queuesCol.aggregate([
+  // Count assignments per worker
+  const assignments = await assignmentsCol.aggregate([
     { $group: { _id: '$worker', count: { $sum: 1 } } }
   ]).toArray()
 
-  const queueCount = {}
+  const assignmentCount = {}
   for (const entry of assignments) {
-    queueCount[entry._id] = entry.count
+    assignmentCount[entry._id] = entry.count
   }
 
   let selectedWorker = null
@@ -55,7 +55,7 @@ async function assignQueueToLeastLoadedWorker(queueName) {
 
   for (const worker of workers) {
     const pid = `${worker.pid}`
-    const count = queueCount[pid] || 0
+    const count = assignmentCount[pid] || 0
   
     if (count < MAX_LOAD && count < minLoad) {
       minLoad = count
@@ -70,7 +70,7 @@ async function assignQueueToLeastLoadedWorker(queueName) {
   }
 
   const queueUrl = `http://localhost:4566/000000000000/${queueName}`
-  const result = await queuesCol.insertOne({
+  const result = await assignmentsCol.insertOne({
     queueUrl,
     worker: selectedWorker
   })
