@@ -1,13 +1,15 @@
 # Distributed Queue Processing System
 
-A fault-tolerant distributed worker-consumer system built using **Node.js**, **MongoDB**, and **AWS SQS** (LocalStack for local testing). The system manages dynamic queue assignment, scalable message processing, and real-time job tracking.
+A fault-tolerant distributed worker-consumer system built using **Node.js**, **MongoDB**, and **AWS SQS** (LocalStack for local testing). The system manages dynamic queue assignment, scalable message processing, real-time job tracking, and includes race condition protection for concurrent queue assignments.
 
 ## 📌 Features
 
 - **Master-Worker Architecture:** A centralized master assigns queues to workers. Each worker manages its own pool of consumers.
 - **Parallel Message Processing:** Consumers handle messages concurrently from assigned queues with configurable concurrency and lifecycle limits.
+- **Race Condition Protection:** MongoDB unique indexes prevent duplicate queue assignments under high concurrent load.
 - **Job Lifecycle Tracking:** Real-time monitoring of every queue via a `jobs` collection with full audit trail (`queued`, `running`, `completed`).
 - **Worker Load Balancing:** Queues are distributed based on worker load and capped using `MAX_LOAD`.
+- **Auto-Setup:** Database indexes are automatically created on system startup.
 - **Tested Infrastructure:** Integration tests using Mocha simulate full system flows including queue polling, message processing, and job completion.
 
 ## 🧱 Project Structure
@@ -28,6 +30,8 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 
 ### `assignments`
 Tracks queue assignment documents that map queues to workers during processing.
+- **Unique Index:** `queueUrl` field prevents duplicate assignments (race condition protection)
+- **Ephemeral:** Documents created during assignment, deleted after message processing
 
 ### `workers`
 Tracks active worker PIDs and their start time.

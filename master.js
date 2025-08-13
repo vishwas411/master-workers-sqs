@@ -16,11 +16,12 @@ async function assignQueueToLeastLoadedWorker(queueName) {
   await client.connect()
   const db = client.db(DB_NAME)
 
-  
   const assignmentsCol = db.collection('assignments')
   const workersCol = db.collection('workers')
 
-  const existingQueue = await assignmentsCol.findOne({ queueUrl: `http://localhost:4566/000000000000/${queueName}` })
+  const queueUrl = `http://localhost:4566/000000000000/${queueName}`
+
+  const existingQueue = await assignmentsCol.findOne({ queueUrl })
 
   if (existingQueue) {
     console.log(`Queue '${queueName}' is already assigned to worker ${existingQueue.worker}`)
@@ -56,28 +57,44 @@ async function assignQueueToLeastLoadedWorker(queueName) {
   for (const worker of workers) {
     const pid = `${worker.pid}`
     const count = assignmentCount[pid] || 0
-  
+
     if (count < MAX_LOAD && count < minLoad) {
       minLoad = count
       selectedWorker = pid
     }
   }
-  
+
 
   if (!selectedWorker) {
     await client.close()
     return { success: false, message: 'No eligible worker found' }
   }
 
-  const queueUrl = `http://localhost:4566/000000000000/${queueName}`
-  const result = await assignmentsCol.insertOne({
-    queueUrl,
-    worker: selectedWorker
-  })
+  try {
+    const result = await assignmentsCol.insertOne({
+      queueUrl,
+      worker: selectedWorker
+    })
 
-  console.log(`Assigned queue '${queueName}' to worker ${selectedWorker}`)
-  await client.close()
-  return { success: true, assignedTo: selectedWorker, queueUrl }
+    console.log(`Assigned queue '${queueName}' to worker ${selectedWorker}`)
+    await client.close()
+    return { success: true, assignedTo: selectedWorker, queueUrl }
+  } catch (err) {
+    if (err.code === 11000) {
+      const existingQueue = await assignmentsCol.findOne({ queueUrl })
+      console.log(`Race condition detected: Queue '${queueName}' was assigned to worker ${existingQueue.worker} by concurrent request`)
+      await client.close()
+      return {
+        success: true,
+        alreadyAssigned: true,
+        queueUrl: existingQueue.queueUrl,
+        worker: existingQueue.worker
+      }
+    }
+
+    await client.close()
+    throw err
+  }
 }
 
 const app = express()
