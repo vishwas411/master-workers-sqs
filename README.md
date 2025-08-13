@@ -4,6 +4,7 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 
 ## 🚀 Recent Major Updates
 
+- **Jobs Tracking System:** Complete lifecycle tracking for all queue processing operations with status monitoring and performance metrics
 - **Dynamic Concurrency Control:** Consumers now fetch queue-specific concurrency from database instead of using fixed environment variables
 - **Enhanced Assignment Collection:** Assignment documents include queue ObjectId references for proper data relationships
 - **AWS SDK v3:** Upgraded to modern, modular AWS SDK for better performance and maintenance
@@ -15,6 +16,7 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 ## 📌 Features
 
 - **Master-Worker Architecture:** A centralized master assigns queues to workers. Each worker manages its own pool of consumers.
+- **Comprehensive Jobs Tracking:** Real-time monitoring of queue processing with detailed lifecycle tracking, performance metrics, and status transitions.
 - **Dynamic Concurrency Processing:** Consumers automatically fetch and apply queue-specific concurrency limits from the database, overriding global environment settings.
 - **Enhanced Data Relationships:** Assignment documents include queue ObjectId references, enabling powerful aggregation queries and maintaining data integrity.
 - **Race Condition Protection:** MongoDB unique indexes prevent duplicate queue assignments under high concurrent load.
@@ -67,12 +69,36 @@ Tracks queue assignment documents that map queues to workers during processing.
 ### `workers`
 Tracks active worker PIDs and their start time.
 
-### `jobs`
-Tracks queue execution status with fields:
-- `queueId`, `qName`
-- `status`: `queued`, `running`, `completed`
-- `messageCount`, `processor.workerPid`, `processor.consumerPid`
-- `createdAt`, `startedAt`, `endedAt`, `lastModified`
+### `jobs` (NEW - Complete Lifecycle Tracking)
+Comprehensive tracking for all queue processing operations with real-time status monitoring.
+
+**Purpose:** Audit trail, performance monitoring, and operational visibility for queue processing.
+
+**Document Structure:**
+```json
+{
+  "_id": "ObjectId(...)",
+  "queueName": "orders-processing",
+  "queueUrl": "http://localhost:4566/000000000000/orders-processing",
+  "queueId": "ObjectId(...)",  // Reference to queues collection
+  "status": "running",         // queued | running | completed
+  "messageCount": 23,          // Total messages processed
+  "processor": {
+    "workerPid": "12345",      // Worker that received assignment
+    "consumerPid": "67890"     // Consumer actually processing messages
+  },
+  "createdAt": "2025-08-13T19:13:22.817Z",    // Job creation time
+  "startedAt": "2025-08-13T19:13:45.123Z",    // Processing start time  
+  "endedAt": "2025-08-13T19:14:12.456Z",      // Processing completion time
+  "lastModified": "2025-08-13T19:14:12.456Z"  // Last status update
+}
+```
+
+**Key Features:**
+- **Status Transitions:** Automatic tracking through queued → running → completed lifecycle
+- **Performance Metrics:** Message counts, processing duration, timing analytics
+- **Process Attribution:** Full traceability of which worker/consumer handled each job
+- **Efficient Indexing:** Compound indexes on `{status, createdAt}` and `{queueUrl, status}` for fast queries
 
 ## 💡 Use Cases
 
