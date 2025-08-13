@@ -35,7 +35,31 @@ async function cleanStaleWorkers() {
   }
 }
 
+async function ensureIndexes() {
+  const uri = nconf.get('MONGODB_URI')
+  const dbName = nconf.get('MONGODB_NAME')
+
+  try {
+    const client = new MongoClient(uri)
+    await client.connect()
+    const db = client.db(dbName)
+    
+    // Create unique index on assignments.queueUrl to prevent race conditions
+    await db.collection('assignments').createIndex(
+      { queueUrl: 1 }, 
+      { unique: true, background: true }
+    )
+    console.log('✅ Ensured unique index on assignments.queueUrl')
+    
+    await client.close()
+  } catch (err) {
+    console.error('Failed to ensure database indexes:', err)
+  }
+}
+
 async function startServer() {
+  await ensureIndexes()
+  
   if (mode === 'MW') {
     await cleanStaleWorkers()
   }
