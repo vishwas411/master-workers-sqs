@@ -10,6 +10,7 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 - **Job Lifecycle Tracking:** Real-time monitoring of every queue via a `jobs` collection with full audit trail (`queued`, `running`, `completed`).
 - **Worker Load Balancing:** Queues are distributed based on worker load and capped using `MAX_LOAD`.
 - **Auto-Setup:** Database indexes are automatically created on system startup.
+- **One-Way Queue Sync:** DB → SQS sync preserves MongoDB ObjectIds (SQS queues without DB entries are ignored).
 - **Tested Infrastructure:** Integration tests using Mocha simulate full system flows including queue polling, message processing, and job completion.
 
 ## 🧱 Project Structure

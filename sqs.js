@@ -1,50 +1,62 @@
 #!/usr/bin/env node
 
-const AWS = require('aws-sdk')
+const { 
+  SQSClient, 
+  CreateQueueCommand, 
+  DeleteQueueCommand, 
+  ListQueuesCommand,
+  SendMessageCommand,
+  ReceiveMessageCommand,
+  GetQueueAttributesCommand,
+  GetQueueUrlCommand 
+} = require('@aws-sdk/client-sqs')
 const http = require('http')
 
-const sqs = new AWS.SQS({
+const sqs = new SQSClient({
   region: 'us-east-1',
-  accessKeyId: 'test',
-  secretAccessKey: 'test',
-  endpoint: 'http://localhost:4566'
+  credentials: {
+    accessKeyId: 'test',
+    secretAccessKey: 'test'
+  },
+  endpoint: 'http://localhost:4566',
+  forcePathStyle: true
 })
 
 const [, , command, ...args] = process.argv
 
 async function createQueue(name) {
   try {
-    const result = await sqs.createQueue({
+    const result = await sqs.send(new CreateQueueCommand({
       QueueName: name
-    }).promise()
-    console.log(`✅ Created queue '${name}': ${result.QueueUrl}`)
+    }))
+    console.log(`Created queue '${name}': ${result.QueueUrl}`)
   } catch (err) {
-    console.error(`❌ Failed to create queue '${name}':`, err.message)
+    console.error(`Failed to create queue '${name}':`, err.message)
   }
 }
 
 async function deleteQueue(name) {
   try {
     const url = await getQueueUrl(name)
-    await sqs.deleteQueue({ QueueUrl: url }).promise()
-    console.log(`🗑️  Deleted queue '${name}'`)
+    await sqs.send(new DeleteQueueCommand({ QueueUrl: url }))
+    console.log(`Deleted queue '${name}'`)
   } catch (err) {
-    console.error(`❌ Failed to delete queue '${name}':`, err.message)
+    console.error(`Failed to delete queue '${name}':`, err.message)
   }
 }
 
 async function listQueues() {
   try {
-    const result = await sqs.listQueues().promise()
+    const result = await sqs.send(new ListQueuesCommand({}))
     const urls = result.QueueUrls || []
     if (urls.length === 0) {
-      console.log('📭 No queues found.')
+      console.log('No queues found.')
     } else {
-      console.log('📋 Queues:')
+      console.log('Queues:')
       urls.forEach(url => console.log('- ' + url))
     }
   } catch (err) {
-    console.error('❌ Failed to list queues:', err.message)
+    console.error('Failed to list queues:', err.message)
   }
 }
 
@@ -92,10 +104,10 @@ async function sendMessages(name, count) {
   
       for (let i = 1; i <= count; i++) {
         promises.push(
-          sqs.sendMessage({
+          sqs.send(new SendMessageCommand({
             QueueUrl: url,
             MessageBody: `Test message ${i}`
-          }).promise()
+          }))
         )
       }
   
@@ -107,34 +119,81 @@ async function sendMessages(name, count) {
       try {
         await notifyMaster(name)
       } catch (notifyErr) {
-        console.warn(`⚠️ Master did not respond to assignment request for '${name}': ${notifyErr.message}`)
+        console.warn(`Master did not respond to assignment request for '${name}': ${notifyErr.message}`)
       }
   
     } catch (err) {
-      console.error(`❌ Failed to send messages to '${name}':`, err.message)
+      console.error(`Failed to send messages to '${name}':`, err.message)
     }
   }
   
 async function getQueueSize(name) {
     try {
       const url = await getQueueUrl(name)
-      const result = await sqs.getQueueAttributes({
+      const result = await sqs.send(new GetQueueAttributesCommand({
         QueueUrl: url,
         AttributeNames: ['ApproximateNumberOfMessages']
-      }).promise()
+      }))
   
       const count = result.Attributes.ApproximateNumberOfMessages
-      console.log(`📦 Queue '${name}' contains ~${count} message(s)`)
+      console.log(`Queue '${name}' contains ~${count} message(s)`)
     } catch (err) {
-      console.error(`❌ Failed to fetch size for queue '${name}':`, err.message)
+      console.error(`Failed to fetch size for queue '${name}':`, err.message)
     }
   }
   
 
 async function getQueueUrl(name) {
-  const result = await sqs.getQueueUrl({ QueueName: name }).promise()
+  const result = await sqs.send(new GetQueueUrlCommand({ QueueName: name }))
   return result.QueueUrl
 }
+
+async function setConcurrency(name, concurrency) {
+  const { MongoClient } = require('mongodb')
+  const nconf = require('nconf')
+  const path = require('path')
+  
+  nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
+  
+  const uri = nconf.get('MONGODB_URI')
+  const dbName = nconf.get('MONGODB_NAME')
+  
+  const concurrencyNum = parseInt(concurrency)
+  
+  if (isNaN(concurrencyNum) || concurrencyNum < 1 || concurrencyNum > 5) {
+    console.error('Concurrency must be a number between 1 and 5')
+    return
+  }
+
+  try {
+    const client = new MongoClient(uri)
+    await client.connect()
+    const db = client.db(dbName)
+    const queuesCol = db.collection('queues')
+    
+    const result = await queuesCol.updateOne(
+      { name: name },
+      { 
+        $set: { 
+          concurrency: concurrencyNum,
+          updatedAt: new Date()
+        }
+      }
+    )
+    
+    if (result.matchedCount === 0) {
+      console.error(`Queue '${name}' not found in database`)
+    } else {
+      console.log(`Updated concurrency for queue '${name}' to ${concurrencyNum}`)
+    }
+    
+    await client.close()
+  } catch (err) {
+    console.error(`Failed to update concurrency for queue '${name}':`, err.message)
+  }
+}
+
+
 
 async function main() {
   switch (command) {
@@ -153,14 +212,19 @@ async function main() {
     case 'size':
       await getQueueSize(args[0])
       break
+    case 'set-concurrency':
+      await setConcurrency(args[0], args[1])
+      break
+
     default:
-      console.log(`❓ Unknown command: ${command}`)
+      console.log(`Unknown command: ${command}`)
       console.log(`Usage:
   node sqs.js create <name>
   node sqs.js delete <name>
   node sqs.js list
   node sqs.js send <name> <count>
-  node sqs.js size <name>`)
+  node sqs.js size <name>
+  node sqs.js set-concurrency <name> <1-5>`)
   }
 }
 
