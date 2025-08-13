@@ -29,21 +29,66 @@ const sqs = new SQSClient({
 const [, , command, ...args] = process.argv
 
 async function createQueue(name) {
+  const uri = nconf.get('MONGODB_URI')
+  const dbName = nconf.get('MONGODB_NAME')
+  
   try {
     const result = await sqs.send(new CreateQueueCommand({
       QueueName: name
     }))
+    
+    // Also save the queue document to MongoDB
+    const client = new MongoClient(uri)
+    await client.connect()
+    const db = client.db(dbName)
+    const queuesCol = db.collection('queues')
+    
+    const queueDocument = {
+      name: name,
+      queueUrl: result.QueueUrl,
+      concurrency: 5, // default concurrency
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      syncedAt: new Date()
+    }
+    
+    await queuesCol.insertOne(queueDocument)
+    await client.close()
+    
     console.log(`Created queue '${name}': ${result.QueueUrl}`)
+    console.log(`Saved queue document to database with ObjectId: ${queueDocument._id}`)
   } catch (err) {
-    console.error(`Failed to create queue '${name}':`, err.message)
+    if (err.code === 11000) {
+      console.error(`Queue '${name}' already exists in database`)
+    } else {
+      console.error(`Failed to create queue '${name}':`, err.message)
+    }
   }
 }
 
 async function deleteQueue(name) {
+  const uri = nconf.get('MONGODB_URI')
+  const dbName = nconf.get('MONGODB_NAME')
+  
   try {
     const url = await getQueueUrl(name)
     await sqs.send(new DeleteQueueCommand({ QueueUrl: url }))
+    
+    // Also remove the queue document from MongoDB
+    const client = new MongoClient(uri)
+    await client.connect()
+    const db = client.db(dbName)
+    const queuesCol = db.collection('queues')
+    
+    const result = await queuesCol.deleteOne({ name: name })
+    await client.close()
+    
     console.log(`Deleted queue '${name}'`)
+    if (result.deletedCount > 0) {
+      console.log(`Removed queue document from database`)
+    } else {
+      console.log(`No queue document found in database to remove`)
+    }
   } catch (err) {
     console.error(`Failed to delete queue '${name}':`, err.message)
   }
@@ -120,7 +165,7 @@ async function notifyMaster(queueName) {
       res.on('end', () => {
         try {
           const response = JSON.parse(body)
-          console.log(`📡 Master response:`, response)
+          console.log(`Master response:`, response)
           resolve(response)
         } catch (e) {
           reject(e)
@@ -153,7 +198,7 @@ async function sendMessages(name, count) {
       await Promise.all(promises)
   
       const duration = ((Date.now() - start) / 1000).toFixed(2)
-      console.log(`📨 Successfully sent ${count} messages to '${name}' in ${duration}s`)
+      console.log(`Successfully sent ${count} messages to '${name}' in ${duration}s`)
   
       try {
         await notifyMaster(name)
