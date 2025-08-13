@@ -7,7 +7,7 @@ nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.js
 
 const MONGO_URI = nconf.get('MONGODB_URI')
 const DB_NAME = nconf.get('MONGODB_NAME')
-const COLLECTION_NAME = 'queues'
+const COLLECTION_NAME = 'assignments'
 
 const MAX_LOAD = parseInt(nconf.get('MAX_LOAD') || 5)
 const MAX_USAGE = parseInt(nconf.get('CONSUMER_USAGE_LIMIT') || 5)
@@ -23,51 +23,51 @@ async function startWorkerManager() {
   const db = client.db(DB_NAME)
   const collection = db.collection(COLLECTION_NAME)
 
-  console.log(`Worker Manager (PID ${process.pid}) started. Polling DB for assigned queues...`)
+  console.log(`Worker Manager (PID ${process.pid}) started. Polling DB for queue assignments...`)
 
   async function pollDB() {
     try {
-      const queues = await collection.find({ worker: `${process.pid}` }).toArray()
+      const assignments = await collection.find({ worker: `${process.pid}` }).toArray()
 
-      for (const queue of queues) {
-        const queueId = queue._id.toString()
+      for (const assignment of assignments) {
+        const assignmentId = assignment._id.toString()
 
-        if (!activeAssignments.has(queueId)) {
+        if (!activeAssignments.has(assignmentId)) {
           if (idleConsumers.size > 0) {
             const consumerIndex = Array.from(idleConsumers)[0]
             const consumer = consumers[consumerIndex]
             idleConsumers.delete(consumerIndex)
-            activeAssignments.set(queueId, consumerIndex)
+            activeAssignments.set(assignmentId, consumerIndex)
 
             consumer.send({
               type: 'assign',
-              queueId,
-              queueUrl: queue.queueUrl
+              assignmentId: assignmentId,
+              queueUrl: assignment.queueUrl
             })
 
-            console.log(`Assigned queue ${queueId} to consumer PID ${consumer.pid}`)
+            console.log(`Assigned assignment ${assignmentId} to consumer PID ${consumer.pid}`)
           } else if ((consumers.length - idleConsumers.size) < MAX_LOAD) {
             const consumerIndex = consumers.length
             const consumer = fork(path.join(__dirname, 'consumer.js'))
 
             consumers.push(consumer)
-            activeAssignments.set(queueId, consumerIndex)
+            activeAssignments.set(assignmentId, consumerIndex)
             consumerUsageCount.set(consumer.pid, 1)
 
             consumer.on('message', async msg => {
               if (msg.type === 'done') {
                 const donePid = msg.consumerPid
-                const doneQueueId = msg.queueId
+                const doneAssignmentId = msg.assignmentId
                 const usage = consumerUsageCount.get(donePid) || 1
 
-                console.log(`Consumer PID ${donePid} finished queue ${doneQueueId}`)
-                activeAssignments.delete(doneQueueId)
+                console.log(`Consumer PID ${donePid} finished assignment ${doneAssignmentId}`)
+                activeAssignments.delete(doneAssignmentId)
 
                 try {
-                  await collection.deleteOne({ _id: new ObjectId(doneQueueId) })
-                  console.log(`Deleted queue ${doneQueueId} from DB`)
+                  await collection.deleteOne({ _id: new ObjectId(doneAssignmentId) })
+                  console.log(`Deleted assignment ${doneAssignmentId} from DB`)
                 } catch (err) {
-                  console.error(`Failed to delete queue ${doneQueueId}:`, err)
+                  console.error(`Failed to delete assignment ${doneAssignmentId}:`, err)
                 }
 
                 if (usage >= MAX_USAGE) {
@@ -91,11 +91,11 @@ async function startWorkerManager() {
 
             consumer.send({
               type: 'assign',
-              queueId,
-              queueUrl: queue.queueUrl
+              assignmentId: assignmentId,
+              queueUrl: assignment.queueUrl
             })
 
-            console.log(`Forked and assigned queue ${queueId} to new consumer PID ${consumer.pid}`)
+            console.log(`Forked and assigned assignment ${assignmentId} to new consumer PID ${consumer.pid}`)
           }
         }
       }
