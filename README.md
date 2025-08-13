@@ -2,16 +2,25 @@
 
 A fault-tolerant distributed worker-consumer system built using **Node.js**, **MongoDB**, and **AWS SQS** (LocalStack for local testing). The system manages dynamic queue assignment, scalable message processing, real-time job tracking, and includes race condition protection for concurrent queue assignments.
 
+## 🚀 Recent Major Updates
+
+- **AWS SDK v3:** Upgraded to modern, modular AWS SDK for better performance and maintenance
+- **Queue Metadata Management:** Complete lifecycle management with concurrency control
+- **One-Way Smart Sync:** DB → SQS sync preserves ObjectIds while ensuring consistency
+- **Enhanced CLI:** Professional queue management with concurrency configuration
+- **nconf Configuration:** Centralized, environment-specific configuration management
+
 ## 📌 Features
 
 - **Master-Worker Architecture:** A centralized master assigns queues to workers. Each worker manages its own pool of consumers.
 - **Parallel Message Processing:** Consumers handle messages concurrently from assigned queues with configurable concurrency and lifecycle limits.
 - **Race Condition Protection:** MongoDB unique indexes prevent duplicate queue assignments under high concurrent load.
-- **Job Lifecycle Tracking:** Real-time monitoring of every queue via a `jobs` collection with full audit trail (`queued`, `running`, `completed`).
+- **Queue Metadata Management:** Complete queue lifecycle with concurrency control, creation tracking, and metadata sync.
+- **Smart Queue Sync:** DB → SQS one-way sync preserves MongoDB ObjectIds while creating missing SQS queues from database records.
 - **Worker Load Balancing:** Queues are distributed based on worker load and capped using `MAX_LOAD`.
-- **Auto-Setup:** Database indexes are automatically created on system startup.
-- **One-Way Queue Sync:** DB → SQS sync preserves MongoDB ObjectIds (SQS queues without DB entries are ignored).
-- **Tested Infrastructure:** Integration tests using Mocha simulate full system flows including queue polling, message processing, and job completion.
+- **Auto-Setup:** Database indexes and configuration automatically created on system startup.
+- **Professional CLI:** Clean, emoji-free command interface for production environments.
+- **Modern Dependencies:** AWS SDK v3 with modular imports and improved performance.
 
 ## 🧱 Project Structure
 
@@ -21,13 +30,19 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 ├── worker.js          # Polls DB for assigned queues, forks consumers, manages their lifecycle
 ├── consumer.js        # Processes messages in parallel and reports back to worker
 ├── server.js          # Entry-point to launch in various modes (Master, Worker, MW)
-├── sqs.js             # CLI for interacting with queues (create, delete, send, size)
+├── sqs.js             # Enhanced CLI for queue management (create, delete, send, size, set-concurrency)
 ├── env/               # Environment-specific config files (development.json, test.json)
 ├── __tests__/         # Mocha-based test suites for master, worker, consumer logic
 └── README.md
 ```
 
 ## 🗄️ MongoDB Collections
+
+### `queues`
+**NEW:** Persistent queue metadata management
+- `name`, `queueUrl`, `createdAt`, `concurrency` (1-5), `syncedAt`, `updatedAt`
+- **Unique Indexes:** `name` and `queueUrl` prevent duplicates
+- **Purpose:** Central source of truth for queue configuration and concurrency management
 
 ### `assignments`
 Tracks queue assignment documents that map queues to workers during processing.
@@ -50,10 +65,31 @@ Tracks queue execution status with fields:
 - Systems requiring queue-specific tracking and audit logs
 - Workload balancing in environments with multiple workers
 
+## ⚙️ Enhanced CLI Commands
+
+The `sqs.js` CLI provides comprehensive queue management:
+
+```bash
+# Queue Management
+node sqs.js create <name>                    # Create SQS queue
+node sqs.js delete <name>                    # Delete SQS queue  
+node sqs.js list                             # List all queues
+
+# Message Operations  
+node sqs.js send <name> <count>              # Send test messages
+node sqs.js size <name>                      # Check message count
+
+# Concurrency Management (NEW)
+node sqs.js set-concurrency <name> <1-5>     # Configure queue concurrency
+```
+
 ## ⚙️ Configuration & Scaling
 
-- Uses **LocalStack** (SQS) for local development. Can be easily switched to real AWS by replacing `AWS_SQS_ENDPOINT` in `env/development.json`.
-- Message concurrency is defined via `CONCURRENCY_LIMIT`
+**Environment Configuration (nconf-based):**
+- All settings managed via `env/development.json`
+- AWS credentials, endpoints, and MongoDB URIs centrally configured
+- Uses **LocalStack** (SQS) for local development, easily switchable to real AWS
+- Queue-specific concurrency configured via CLI (1-5 messages per queue)
 - Consumer reuse and limit management via `CONSUMER_USAGE_LIMIT`
 - Worker scaling via `WORKER_INSTANCES`
 
@@ -64,15 +100,19 @@ Tracks queue execution status with fields:
 - With 2 workers, the system can process up to **50 messages in parallel** (5 queues × 5 concurrent messages × 2 workers)
 - Can be scaled horizontally by increasing `WORKER_INSTANCES` and running multiple master processes
 
-## 🔮 Roadmap
+## 🧪 Comprehensive Testing Suite
 
-- [ ] Add more tests covering failure recovery, job timeout, and SQS errors
-- [ ] Modularize the system into a proper microservice
-- [ ] Add REST API for job and queue inspection
-- [ ] Support multi-master failover architecture for high availability
+**Verified Scenarios:**
+- ✅ Basic SQS Operations (create, delete, list, send, size)
+- ✅ Concurrency Management (set-concurrency with validation)
+- ✅ Master Startup & Database Sync (one-way DB → SQS)
+- ✅ Single Master + Single Worker (message processing)
+- ✅ Multi-Worker Load Balancing (queue distribution)
+- ✅ Race Condition Protection (unique indexes prevent duplicates)
+- ✅ ObjectId Preservation (DB sync maintains MongoDB document IDs)
+- ✅ Error Handling (invalid inputs, missing queues, boundary conditions)
 
-## 🧪 Testing
-
+**Run Tests:**
 ```bash
 npm install
 npm test
@@ -89,11 +129,21 @@ NODE_ENV=development MODE=M node server.js   # Master only
 NODE_ENV=development MODE=W node server.js   # Worker only
 ```
 
-## 📦 Requirements
+## 🔮 Roadmap
 
-- Node.js >= 18.x
-- MongoDB >= 4.x
-- LocalStack (or AWS) for SQS simulation
+- [ ] Add more tests covering failure recovery, job timeout, and SQS errors
+- [ ] Modularize the system into a proper microservice
+- [ ] Add REST API for job and queue inspection
+- [ ] Support multi-master failover architecture for high availability
+
+## 📦 Requirements & Dependencies
+
+- **Node.js** >= 18.x
+- **MongoDB** >= 4.x
+- **LocalStack** (or AWS) for SQS simulation
+- **AWS SDK v3** (`@aws-sdk/client-sqs`) - Modern, modular, actively maintained
+- **nconf** - Environment-specific configuration management
+- **MongoDB Driver** - Native MongoDB client for Node.js
 
 ---
 
