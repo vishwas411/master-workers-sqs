@@ -104,7 +104,7 @@ node sqs.js set-concurrency <name> <1-5>     # Configure queue concurrency
 - All settings managed via `env/development.json`
 - AWS credentials, endpoints, and MongoDB URIs centrally configured
 - Uses **LocalStack** (SQS) for local development, easily switchable to real AWS
-- **Dynamic Concurrency:** Queue-specific concurrency fetched from database (overrides legacy `CONCURRENCY_LIMIT`)
+- **Dynamic Concurrency:** Queue-specific concurrency fetched from database
 - Consumer reuse and limit management via `CONSUMER_USAGE_LIMIT`
 - Worker scaling via `WORKER_INSTANCES`
 
