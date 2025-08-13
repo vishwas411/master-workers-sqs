@@ -4,6 +4,8 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 
 ## 🚀 Recent Major Updates
 
+- **Dynamic Concurrency Control:** Consumers now fetch queue-specific concurrency from database instead of using fixed environment variables
+- **Enhanced Assignment Collection:** Assignment documents include queue ObjectId references for proper data relationships
 - **AWS SDK v3:** Upgraded to modern, modular AWS SDK for better performance and maintenance
 - **Queue Metadata Management:** Complete lifecycle management with concurrency control
 - **One-Way Smart Sync:** DB → SQS sync preserves ObjectIds while ensuring consistency
@@ -13,7 +15,8 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 ## 📌 Features
 
 - **Master-Worker Architecture:** A centralized master assigns queues to workers. Each worker manages its own pool of consumers.
-- **Parallel Message Processing:** Consumers handle messages concurrently from assigned queues with configurable concurrency and lifecycle limits.
+- **Dynamic Concurrency Processing:** Consumers automatically fetch and apply queue-specific concurrency limits from the database, overriding global environment settings.
+- **Enhanced Data Relationships:** Assignment documents include queue ObjectId references, enabling powerful aggregation queries and maintaining data integrity.
 - **Race Condition Protection:** MongoDB unique indexes prevent duplicate queue assignments under high concurrent load.
 - **Queue Metadata Management:** Complete queue lifecycle with concurrency control, creation tracking, and metadata sync.
 - **Smart Queue Sync:** DB → SQS one-way sync preserves MongoDB ObjectIds while creating missing SQS queues from database records.
@@ -44,10 +47,22 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 - **Unique Indexes:** `name` and `queueUrl` prevent duplicates
 - **Purpose:** Central source of truth for queue configuration and concurrency management
 
-### `assignments`
+### `assignments` (Enhanced with Queue References)
 Tracks queue assignment documents that map queues to workers during processing.
+- **Queue ObjectId References:** Each assignment includes `queueId` linking to the `queues` collection for proper data relationships
 - **Unique Index:** `queueUrl` field prevents duplicate assignments (race condition protection)
 - **Ephemeral:** Documents created during assignment, deleted after message processing
+- **Data Integrity:** Enables complex aggregation queries between assignments and queues collections
+
+**Example Document:**
+```json
+{
+  "_id": "ObjectId(...)",
+  "queueUrl": "http://localhost:4566/000000000000/orders-queue",
+  "worker": "worker_12345",
+  "queueId": "ObjectId(...)"  // Reference to queues collection
+}
+```
 
 ### `workers`
 Tracks active worker PIDs and their start time.
@@ -89,9 +104,15 @@ node sqs.js set-concurrency <name> <1-5>     # Configure queue concurrency
 - All settings managed via `env/development.json`
 - AWS credentials, endpoints, and MongoDB URIs centrally configured
 - Uses **LocalStack** (SQS) for local development, easily switchable to real AWS
-- Queue-specific concurrency configured via CLI (1-5 messages per queue)
+- **Dynamic Concurrency:** Queue-specific concurrency fetched from database
 - Consumer reuse and limit management via `CONSUMER_USAGE_LIMIT`
 - Worker scaling via `WORKER_INSTANCES`
+
+**Queue-Specific Concurrency Control:**
+- Each queue in the `queues` collection has its own `concurrency` setting (1-5)
+- Consumers automatically fetch and apply these limits at runtime
+- Falls back to default (5) if queue not found in database
+- Configure using: `node sqs.js set-concurrency <queue-name> <concurrency>`
 
 ## 📈 Message Handling Capacity
 

@@ -1,6 +1,7 @@
 const path = require('path')
 const nconf = require('nconf')
 const { SQSClient, DeleteMessageCommand, ReceiveMessageCommand } = require('@aws-sdk/client-sqs')
+const { MongoClient } = require('mongodb')
 
 nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
 
@@ -14,7 +15,7 @@ const sqs = new SQSClient({
   forcePathStyle: true
 })
 
-const CONCURRENCY_LIMIT = nconf.get('CONCURRENCY_LIMIT') || 5
+let queueConcurrency = 5
 let activeMessages = 0
 let currentAssignmentId = null
 let currentQueueUrl = null
@@ -44,20 +45,48 @@ async function processMessage(message) {
   }
 }
 
+async function fetchQueueConcurrency(queueUrl) {
+  const uri = nconf.get('MONGODB_URI')
+  const dbName = nconf.get('MONGODB_NAME')
+  
+  try {
+    const client = new MongoClient(uri)
+    await client.connect()
+    const db = client.db(dbName)
+    const queuesCol = db.collection('queues')
+
+    const queueName = queueUrl.split('/').pop()
+    const queueDoc = await queuesCol.findOne({ name: queueName })
+    
+    await client.close()
+    
+    if (queueDoc && queueDoc.concurrency) {
+      console.log(`Consumer ${process.pid} using queue-specific concurrency: ${queueDoc.concurrency} for queue '${queueName}'`)
+      return queueDoc.concurrency
+    } else {
+      console.log(`Consumer ${process.pid} queue '${queueName}' not found in DB, using default concurrency: 5`)
+      return 5
+    }
+  } catch (err) {
+    console.error(`Consumer ${process.pid} failed to fetch queue concurrency:`, err.message)
+    return 5
+  }
+}
+
 async function pollMessages() {
-  if (!currentQueueUrl || !currentAssignmentId || hasNotifiedDone || activeMessages >= CONCURRENCY_LIMIT) return
+  if (!currentQueueUrl || !currentAssignmentId || hasNotifiedDone || activeMessages >= queueConcurrency) return
 
   try {
     const data = await sqs.send(new ReceiveMessageCommand({
       QueueUrl: currentQueueUrl,
-      MaxNumberOfMessages: Math.min(CONCURRENCY_LIMIT - activeMessages, 10),
+      MaxNumberOfMessages: Math.min(queueConcurrency - activeMessages, 10),
       WaitTimeSeconds: 5,
       VisibilityTimeout: 10
     }))
 
     if (data.Messages && data.Messages.length > 0) {
       for (const msg of data.Messages) {
-        if (activeMessages >= CONCURRENCY_LIMIT) break
+        if (activeMessages >= queueConcurrency) break
         activeMessages++
         processMessage(msg)
       }
@@ -74,12 +103,15 @@ async function pollMessages() {
   setTimeout(pollMessages, 1000)
 }
 
-process.on('message', msg => {
+process.on('message', async msg => {
   if (msg.type === 'assign') {
     currentAssignmentId = msg.assignmentId
     currentQueueUrl = msg.queueUrl
     consumerIndex = msg.consumerIndex
     hasNotifiedDone = false
+
+    queueConcurrency = await fetchQueueConcurrency(currentQueueUrl)
+    
     console.log(`Consumer ${process.pid} assigned assignment ${currentAssignmentId}`)
     pollMessages()
   }

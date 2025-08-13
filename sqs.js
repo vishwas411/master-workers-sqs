@@ -64,9 +64,44 @@ async function listQueues() {
   }
 }
 
+async function fetchQueueDocument(queueName) {
+  const uri = nconf.get('MONGODB_URI')
+  const dbName = nconf.get('MONGODB_NAME')
+  
+  try {
+    const client = new MongoClient(uri)
+    await client.connect()
+    const db = client.db(dbName)
+    const queuesCol = db.collection('queues')
+    
+    const queueDoc = await queuesCol.findOne({ name: queueName })
+    await client.close()
+    
+    return queueDoc
+  } catch (err) {
+    console.error(`Failed to fetch queue document for '${queueName}':`, err.message)
+    return null
+  }
+}
+
 async function notifyMaster(queueName) {
+  // Fetch queue document from database
+  let queueDocument = await fetchQueueDocument(queueName)
+  
+  if (!queueDocument) {
+    console.warn(`Queue '${queueName}' not found in database. Constructing minimal queue document.`)
+    // Construct minimal queue document if not found in DB
+    queueDocument = {
+      name: queueName,
+      queueUrl: `${nconf.get('AWS_SQS_ENDPOINT')}/000000000000/${queueName}`,
+      // No _id field - indicates this is a constructed document
+    }
+  }
+
   return new Promise((resolve, reject) => {
-    const data = JSON.stringify({ queueName })
+    const data = JSON.stringify({ 
+      queueDocument 
+    })
 
     const options = {
       hostname: 'localhost',
