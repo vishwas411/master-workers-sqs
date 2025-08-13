@@ -78,6 +78,13 @@ async function ensureIndexes() {
       { background: true }
     )
     console.log('Ensured compound index on jobs.queueUrl and jobs.status')
+
+    // Create TTL index for automatic job document cleanup (5 days = 432000 seconds)
+    await db.collection('jobs').createIndex(
+      { lastModified: 1 },
+      { expireAfterSeconds: 432000, background: true }
+    )
+    console.log('Ensured TTL index on jobs.lastModified (5 days auto-purge)')
     
     await client.close()
   } catch (err) {
