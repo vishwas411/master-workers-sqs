@@ -19,7 +19,7 @@ async function assignQueueToLeastLoadedWorker(queueName) {
   const assignmentsCol = db.collection('assignments')
   const workersCol = db.collection('workers')
 
-  const queueUrl = `http://localhost:4566/000000000000/${queueName}`
+  const queueUrl = `${nconf.get('AWS_SQS_ENDPOINT')}/000000000000/${queueName}`
 
   const existingQueue = await assignmentsCol.findOne({ queueUrl })
 
