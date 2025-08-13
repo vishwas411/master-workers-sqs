@@ -13,7 +13,7 @@ const sqs = new AWS.SQS({
 
 const CONCURRENCY_LIMIT = nconf.get('CONCURRENCY_LIMIT') || 5
 let activeMessages = 0
-let currentQueueId = null
+let currentAssignmentId = null
 let currentQueueUrl = null
 let hasNotifiedDone = false
 
@@ -42,7 +42,7 @@ async function processMessage(message) {
 }
 
 async function pollMessages() {
-  if (!currentQueueUrl || !currentQueueId || hasNotifiedDone || activeMessages >= CONCURRENCY_LIMIT) return
+  if (!currentQueueUrl || !currentAssignmentId || hasNotifiedDone || activeMessages >= CONCURRENCY_LIMIT) return
 
   try {
     const data = await sqs.receiveMessage({
@@ -59,8 +59,8 @@ async function pollMessages() {
         processMessage(msg)
       }
     } else if (activeMessages === 0 && !hasNotifiedDone) {
-      process.send({ type: 'done', queueId: currentQueueId, consumerPid: process.pid })
-      currentQueueId = null
+      process.send({ type: 'done', assignmentId: currentAssignmentId, consumerPid: process.pid })
+      currentAssignmentId = null
       currentQueueUrl = null
       hasNotifiedDone = true
     }
@@ -73,11 +73,11 @@ async function pollMessages() {
 
 process.on('message', msg => {
   if (msg.type === 'assign') {
-    currentQueueId = msg.queueId
+    currentAssignmentId = msg.assignmentId
     currentQueueUrl = msg.queueUrl
     consumerIndex = msg.consumerIndex
     hasNotifiedDone = false
-    console.log(`Consumer ${process.pid} assigned assignment ${currentQueueId}`)
+    console.log(`Consumer ${process.pid} assigned assignment ${currentAssignmentId}`)
     pollMessages()
   }
 })

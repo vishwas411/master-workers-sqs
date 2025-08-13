@@ -41,7 +41,7 @@ async function startWorkerManager() {
 
             consumer.send({
               type: 'assign',
-              queueId: assignmentId,
+              assignmentId: assignmentId,
               queueUrl: assignment.queueUrl
             })
 
@@ -57,17 +57,17 @@ async function startWorkerManager() {
             consumer.on('message', async msg => {
               if (msg.type === 'done') {
                 const donePid = msg.consumerPid
-                const doneQueueId = msg.queueId
+                const doneAssignmentId = msg.assignmentId
                 const usage = consumerUsageCount.get(donePid) || 1
 
-                console.log(`Consumer PID ${donePid} finished assignment ${doneQueueId}`)
-                activeAssignments.delete(doneQueueId)
+                console.log(`Consumer PID ${donePid} finished assignment ${doneAssignmentId}`)
+                activeAssignments.delete(doneAssignmentId)
 
                 try {
-                  await collection.deleteOne({ _id: new ObjectId(doneQueueId) })
-                  console.log(`Deleted assignment ${doneQueueId} from DB`)
+                  await collection.deleteOne({ _id: new ObjectId(doneAssignmentId) })
+                  console.log(`Deleted assignment ${doneAssignmentId} from DB`)
                 } catch (err) {
-                  console.error(`Failed to delete assignment ${doneQueueId}:`, err)
+                  console.error(`Failed to delete assignment ${doneAssignmentId}:`, err)
                 }
 
                 if (usage >= MAX_USAGE) {
@@ -91,7 +91,7 @@ async function startWorkerManager() {
 
             consumer.send({
               type: 'assign',
-              queueId: assignmentId,
+              assignmentId: assignmentId,
               queueUrl: assignment.queueUrl
             })
 
