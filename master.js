@@ -11,7 +11,7 @@ const DB_NAME = nconf.get('MONGODB_NAME')
 const PORT = 3000
 const MAX_LOAD = parseInt(nconf.get('MAX_LOAD') || 5)
 
-async function assignQueueToLeastLoadedWorker(queueName) {
+async function assignQueueToLeastLoadedWorker(queueDocument) {
   const client = new MongoClient(MONGO_URI)
   await client.connect()
   const db = client.db(DB_NAME)
@@ -19,7 +19,11 @@ async function assignQueueToLeastLoadedWorker(queueName) {
   const assignmentsCol = db.collection('assignments')
   const workersCol = db.collection('workers')
 
-  const queueUrl = `${nconf.get('AWS_SQS_ENDPOINT')}/000000000000/${queueName}`
+  const queueName = queueDocument.name
+  const queueUrl = queueDocument.queueUrl
+  const queueId = queueDocument._id || null
+  
+  console.log(`Processing queue assignment for '${queueName}' ${queueId ? '(ObjectId: ' + queueId + ')' : '(no ObjectId - constructed queue)'}`)
 
   const existingQueue = await assignmentsCol.findOne({ queueUrl })
 
@@ -30,7 +34,8 @@ async function assignQueueToLeastLoadedWorker(queueName) {
       success: true,
       alreadyAssigned: true,
       queueUrl: existingQueue.queueUrl,
-      worker: existingQueue.worker
+      worker: existingQueue.worker,
+      queueId: existingQueue.queueId
     }
   }
 
@@ -41,7 +46,6 @@ async function assignQueueToLeastLoadedWorker(queueName) {
     return { success: false, message: 'No workers found' }
   }
 
-  // Count assignments per worker
   const assignments = await assignmentsCol.aggregate([
     { $group: { _id: '$worker', count: { $sum: 1 } } }
   ]).toArray()
@@ -71,14 +75,19 @@ async function assignQueueToLeastLoadedWorker(queueName) {
   }
 
   try {
-    const result = await assignmentsCol.insertOne({
+    const assignmentDoc = {
       queueUrl,
       worker: selectedWorker
-    })
+    }
+    if (queueId) {
+      assignmentDoc.queueId = queueId
+    }
 
-    console.log(`Assigned queue '${queueName}' to worker ${selectedWorker}`)
+    const result = await assignmentsCol.insertOne(assignmentDoc)
+
+    console.log(`Assigned queue '${queueName}' to worker ${selectedWorker} ${queueId ? '(queueId: ' + queueId + ')' : '(no queueId reference)'}`)
     await client.close()
-    return { success: true, assignedTo: selectedWorker, queueUrl }
+    return { success: true, assignedTo: selectedWorker, queueUrl, queueId }
   } catch (err) {
     if (err.code === 11000) {
       const existingQueue = await assignmentsCol.findOne({ queueUrl })
@@ -88,7 +97,8 @@ async function assignQueueToLeastLoadedWorker(queueName) {
         success: true,
         alreadyAssigned: true,
         queueUrl: existingQueue.queueUrl,
-        worker: existingQueue.worker
+        worker: existingQueue.worker,
+        queueId: existingQueue.queueId || null
       }
     }
 
@@ -101,12 +111,13 @@ const app = express()
 app.use(express.json())
 
 app.post('/assign-queue', async (req, res) => {
-  const { queueName } = req.body
-  if (!queueName) {
-    return res.status(400).json({ success: false, message: 'Missing queueName' })
+  const { queueDocument } = req.body
+  
+  if (!queueDocument || !queueDocument.name || !queueDocument.queueUrl) {
+    return res.status(400).json({ success: false, message: 'Missing or invalid queueDocument (name and queueUrl required)' })
   }
 
-  const result = await assignQueueToLeastLoadedWorker(queueName)
+  const result = await assignQueueToLeastLoadedWorker(queueDocument)
   if (!result.success) {
     return res.status(500).json(result)
   }
