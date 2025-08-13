@@ -1,24 +1,28 @@
 #!/usr/bin/env node
 
+const http = require('http')
+const { MongoClient } = require('mongodb')
+const nconf = require('nconf')
+const path = require('path')
 const { 
   SQSClient, 
   CreateQueueCommand, 
   DeleteQueueCommand, 
   ListQueuesCommand,
   SendMessageCommand,
-  ReceiveMessageCommand,
   GetQueueAttributesCommand,
   GetQueueUrlCommand 
 } = require('@aws-sdk/client-sqs')
-const http = require('http')
+
+nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
 
 const sqs = new SQSClient({
-  region: 'us-east-1',
+  region: nconf.get('AWS_REGION'),
   credentials: {
-    accessKeyId: 'test',
-    secretAccessKey: 'test'
+    accessKeyId: nconf.get('AWS_ACCESS_KEY_ID'),
+    secretAccessKey: nconf.get('AWS_SECRET_ACCESS_KEY')
   },
-  endpoint: 'http://localhost:4566',
+  endpoint: nconf.get('AWS_SQS_ENDPOINT'),
   forcePathStyle: true
 })
 
@@ -149,12 +153,6 @@ async function getQueueUrl(name) {
 }
 
 async function setConcurrency(name, concurrency) {
-  const { MongoClient } = require('mongodb')
-  const nconf = require('nconf')
-  const path = require('path')
-  
-  nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
-  
   const uri = nconf.get('MONGODB_URI')
   const dbName = nconf.get('MONGODB_NAME')
   

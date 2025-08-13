@@ -1,14 +1,17 @@
-const AWS = require('aws-sdk')
 const path = require('path')
 const nconf = require('nconf')
+const { SQSClient, DeleteMessageCommand, ReceiveMessageCommand } = require('@aws-sdk/client-sqs')
 
 nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
 
-const sqs = new AWS.SQS({
+const sqs = new SQSClient({
   region: nconf.get('AWS_REGION'),
-  accessKeyId: nconf.get('AWS_ACCESS_KEY_ID'),
-  secretAccessKey: nconf.get('AWS_SECRET_ACCESS_KEY'),
-  endpoint: nconf.get('AWS_SQS_ENDPOINT')
+  credentials: {
+    accessKeyId: nconf.get('AWS_ACCESS_KEY_ID'),
+    secretAccessKey: nconf.get('AWS_SECRET_ACCESS_KEY')
+  },
+  endpoint: nconf.get('AWS_SQS_ENDPOINT'),
+  forcePathStyle: true
 })
 
 const CONCURRENCY_LIMIT = nconf.get('CONCURRENCY_LIMIT') || 5
@@ -27,10 +30,10 @@ async function processMessage(message) {
     console.log(`Consumer ${process.pid} processing:`, message.Body)
     await new Promise(resolve => setTimeout(resolve, 3000))
 
-    await sqs.deleteMessage({
+    await sqs.send(new DeleteMessageCommand({
       QueueUrl: currentQueueUrl,
       ReceiptHandle: message.ReceiptHandle
-    }).promise()
+    }))
 
     console.log(`Consumer ${process.pid} done:`, message.Body)
   } catch (err) {
@@ -45,12 +48,12 @@ async function pollMessages() {
   if (!currentQueueUrl || !currentAssignmentId || hasNotifiedDone || activeMessages >= CONCURRENCY_LIMIT) return
 
   try {
-    const data = await sqs.receiveMessage({
+    const data = await sqs.send(new ReceiveMessageCommand({
       QueueUrl: currentQueueUrl,
       MaxNumberOfMessages: Math.min(CONCURRENCY_LIMIT - activeMessages, 10),
       WaitTimeSeconds: 5,
       VisibilityTimeout: 10
-    }).promise()
+    }))
 
     if (data.Messages && data.Messages.length > 0) {
       for (const msg of data.Messages) {

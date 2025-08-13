@@ -2,6 +2,7 @@ const { spawn } = require('child_process')
 const path = require('path')
 const { MongoClient } = require('mongodb')
 const nconf = require('nconf')
+const { SQSClient, ListQueuesCommand, CreateQueueCommand } = require('@aws-sdk/client-sqs')
 
 const env = process.env.NODE_ENV || 'development'
 nconf.file(path.join(__dirname, `env/${env}.json`))
@@ -74,7 +75,6 @@ async function ensureIndexes() {
 async function syncQueues() {
   const uri = nconf.get('MONGODB_URI')
   const dbName = nconf.get('MONGODB_NAME')
-  const { SQSClient, ListQueuesCommand, CreateQueueCommand } = require('@aws-sdk/client-sqs')
   
   try {
     const sqs = new SQSClient({
