@@ -17,6 +17,7 @@
   "description": "",
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.864.0",
+    "async": "^3.2.6",
     "dotenv": "16.4.7",
     "express": "5.1.0",
     "mongodb": "6.15.0",
