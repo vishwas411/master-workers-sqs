@@ -175,15 +175,26 @@ npm test
 ### **1. Start Infrastructure Services**
 
 ```bash
-# Using Docker/Podman Compose (Recommended)
-podman-compose up -d
-# or
-docker-compose up -d
+# Quick Start (Recommended)
+./start-services.sh
 
-# Or run containers individually:
-podman run -d --name localstack-sqs -p 4566:4566 -e SERVICES=sqs localstack/localstack:latest
-podman run -d --name mongodb-masterworkers -p 27017:27017 mongo:7
+# Stop Services
+./stop-services.sh
+
+# Alternative: Docker/Podman Compose (if available)
+podman-compose up -d  # or docker-compose up -d
+
+# Check service health
+podman pod ps
+podman ps --pod
 ```
+
+**Podman Pod Configuration:**
+- **Pod Name**: `masterworkers-pod` (both services share networking)
+- **LocalStack**: SQS simulation on port 4566
+- **MongoDB**: Database on port 27017  
+- **Volumes**: Persistent data storage (`localstack_data`, `mongodb_data`)
+- **Network**: Shared pod network for optimal communication
 
 ### **2. Start Application**
 
