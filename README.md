@@ -4,6 +4,7 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 
 ## 🚀 Recent Major Updates
 
+- **Completion-Based Message Counting:** Jobs now update message count once at completion with accurate counts, fixing consumer reuse bugs and reducing IPC overhead
 - **Jobs Tracking System:** Complete lifecycle tracking with automatic cleanup - job documents auto-purge after 5 days
 - **Dynamic Concurrency Control:** Consumers now fetch queue-specific concurrency from database instead of using fixed environment variables
 - **Enhanced Assignment Collection:** Assignment documents include queue ObjectId references for proper data relationships
@@ -17,6 +18,7 @@ A fault-tolerant distributed worker-consumer system built using **Node.js**, **M
 
 - **Master-Worker Architecture:** A centralized master assigns queues to workers. Each worker manages its own pool of consumers.
 - **Comprehensive Jobs Tracking:** Real-time monitoring of queue processing with detailed lifecycle tracking, performance metrics, and status transitions.
+- **Efficient Message Counting:** Jobs track total processed messages with single database update at completion, supporting consumer reuse and reducing IPC overhead.
 - **Dynamic Concurrency Processing:** Consumers automatically fetch and apply queue-specific concurrency limits from the database, overriding global environment settings.
 - **Enhanced Data Relationships:** Assignment documents include queue ObjectId references, enabling powerful aggregation queries and maintaining data integrity.
 - **Race Condition Protection:** MongoDB unique indexes prevent duplicate queue assignments under high concurrent load.
@@ -96,8 +98,10 @@ Comprehensive tracking for all queue processing operations with real-time status
 
 **Key Features:**
 - **Status Transitions:** Automatic tracking through queued → running → completed lifecycle
+- **Completion-Based Counting:** Message count updated once at job completion for accuracy and performance
 - **Performance Metrics:** Message counts, processing duration, timing analytics
 - **Process Attribution:** Full traceability of which worker/consumer handled each job
+- **Consumer Reuse Support:** Accurate counting across multiple consumer assignments
 - **Efficient Indexing:** Compound indexes on `{status, createdAt}` and `{queueUrl, status}` for fast queries
 - **Automatic Cleanup:** TTL index automatically purges job documents after 5 days from last modification
 

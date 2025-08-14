@@ -1,5 +1,6 @@
 const path = require('path')
 const nconf = require('nconf')
+const async = require('async')
 const { SQSClient, DeleteMessageCommand, ReceiveMessageCommand } = require('@aws-sdk/client-sqs')
 const { MongoClient } = require('mongodb')
 
@@ -16,10 +17,11 @@ const sqs = new SQSClient({
 })
 
 let queueConcurrency = 5
-let activeMessages = 0
 let currentAssignmentId = null
 let currentQueueUrl = null
 let hasNotifiedDone = false
+let isProcessing = false
+let totalProcessedMessages = 0
 
 async function processMessage(message) {
   if (!currentQueueUrl) {
@@ -29,7 +31,9 @@ async function processMessage(message) {
   
   try {
     console.log(`Consumer ${process.pid} processing:`, message.Body)
-    await new Promise(resolve => setTimeout(resolve, 3000))
+    // Random processing time between 1-5 seconds for better concurrency testing
+    const processingTime = Math.floor(Math.random() * 4000) + 1000
+    await new Promise(resolve => setTimeout(resolve, processingTime))
 
     await sqs.send(new DeleteMessageCommand({
       QueueUrl: currentQueueUrl,
@@ -39,15 +43,6 @@ async function processMessage(message) {
     console.log(`Consumer ${process.pid} done:`, message.Body)
   } catch (err) {
     console.error('Error processing message:', err)
-  } finally {
-      activeMessages--
-  
-  // Notify worker that a message was processed
-  if (currentAssignmentId) {
-    process.send({ type: 'message_processed', assignmentId: currentAssignmentId, messageId: message.MessageId, consumerPid: process.pid })
-  }
-  
-  pollMessages()
   }
 }
 
@@ -80,33 +75,64 @@ async function fetchQueueConcurrency(queueUrl) {
 }
 
 async function pollMessages() {
-  if (!currentQueueUrl || !currentAssignmentId || hasNotifiedDone || activeMessages >= queueConcurrency) return
+  if (!currentQueueUrl || !currentAssignmentId || hasNotifiedDone || isProcessing) return
 
   try {
     const data = await sqs.send(new ReceiveMessageCommand({
       QueueUrl: currentQueueUrl,
-      MaxNumberOfMessages: Math.min(queueConcurrency - activeMessages, 10),
+      MaxNumberOfMessages: 10,
       WaitTimeSeconds: 5,
       VisibilityTimeout: 10
     }))
 
     if (data.Messages && data.Messages.length > 0) {
-      for (const msg of data.Messages) {
-        if (activeMessages >= queueConcurrency) break
-        activeMessages++
-        processMessage(msg)
-      }
-    } else if (activeMessages === 0 && !hasNotifiedDone) {
-      process.send({ type: 'done', assignmentId: currentAssignmentId, consumerPid: process.pid })
+      isProcessing = true
+      
+      // Use async.eachLimit for concurrency control
+      const batchSize = data.Messages.length
+      await new Promise((resolve, reject) => {
+        async.eachLimit(data.Messages, queueConcurrency, async (message) => {
+          try {
+            await processMessage(message)
+            totalProcessedMessages++
+            console.log(`Consumer ${process.pid} processed message, assignment total: ${totalProcessedMessages}`)
+          } catch (err) {
+            console.error('Error processing individual message:', err)
+            throw err
+          }
+        }, (err) => {
+          isProcessing = false
+          if (err) {
+            console.error('Error in batch processing:', err)
+            reject(err)
+          } else {
+            resolve()
+          }
+        })
+      })
+      
+      setTimeout(pollMessages, 100)
+    } else if (!hasNotifiedDone) {
+      console.log(`Consumer ${process.pid} signaling done - processed ${totalProcessedMessages} messages total`)
+      process.send({ 
+        type: 'done', 
+        assignmentId: currentAssignmentId, 
+        consumerPid: process.pid,
+        totalProcessedMessages: totalProcessedMessages
+      })
       currentAssignmentId = null
       currentQueueUrl = null
       hasNotifiedDone = true
+      totalProcessedMessages = 0
     }
   } catch (err) {
     console.error('Polling error:', err)
+    isProcessing = false
   }
 
-  setTimeout(pollMessages, 1000)
+  if (!hasNotifiedDone && !isProcessing) {
+    setTimeout(pollMessages, 1000)
+  }
 }
 
 process.on('message', async msg => {
@@ -115,10 +141,14 @@ process.on('message', async msg => {
     currentQueueUrl = msg.queueUrl
     consumerIndex = msg.consumerIndex
     hasNotifiedDone = false
+    isProcessing = false
+    totalProcessedMessages = 0
+    
+    console.log(`Consumer ${process.pid} reset totalProcessedMessages=0 for assignment ${currentAssignmentId}`)
 
     queueConcurrency = await fetchQueueConcurrency(currentQueueUrl)
     
-    console.log(`Consumer ${process.pid} assigned assignment ${currentAssignmentId}`)
+    console.log(`Consumer ${process.pid} assigned assignment ${currentAssignmentId} with concurrency ${queueConcurrency}`)
     
     // Notify worker that processing has started
     process.send({ type: 'started', assignmentId: currentAssignmentId, consumerPid: process.pid })

@@ -78,18 +78,6 @@ async function startWorkerManager() {
                     }
                   )
                 }
-              } else if (msg.type === 'message_processed') {
-                // Update message count
-                const assignmentData = await collection.findOne({ _id: new ObjectId(msg.assignmentId) })
-                if (assignmentData) {
-                  await jobsCol.updateOne(
-                    { queueUrl: assignmentData.queueUrl },
-                    { 
-                      $inc: { messageCount: 1 },
-                      $set: { lastModified: new Date() }
-                    }
-                  )
-                }
               } else if (msg.type === 'done') {
                 const donePid = msg.consumerPid
                 const doneAssignmentId = msg.assignmentId
@@ -101,17 +89,21 @@ async function startWorkerManager() {
                 try {
                   const assignmentData = await collection.findOne({ _id: new ObjectId(doneAssignmentId) })
                   if (assignmentData) {
-                    // Update job status to completed
+                    const totalMessages = msg.totalProcessedMessages || 0
+                    console.log(`Consumer ${donePid} completed assignment ${doneAssignmentId} with ${totalMessages} messages processed`)
+                    
                     await jobsCol.updateOne(
                       { queueUrl: assignmentData.queueUrl, status: 'running' },
                       { 
                         $set: { 
                           status: 'completed',
+                          messageCount: totalMessages,
                           endedAt: new Date(),
                           lastModified: new Date()
                         }
                       }
                     )
+                    console.log(`Job completed: processed ${totalMessages} messages for queue '${assignmentData.queueUrl}'`)
                   }
 
                   await collection.deleteOne({ _id: new ObjectId(doneAssignmentId) })
