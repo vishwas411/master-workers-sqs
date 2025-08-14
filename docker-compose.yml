@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack-sqs
+    ports:
+      - "4566:4566"  # LocalStack main port
+    environment:
+      - SERVICES=sqs
+      - DEBUG=1
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "/tmp/localstack:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+
+  mongodb:
+    image: mongo:7
+    container_name: mongodb-masterworkers
+    ports:
+      - "27017:27017"  # MongoDB default port
+    environment:
+      - MONGO_INITDB_DATABASE=masterworkers
+    volumes:
+      - mongodb_data:/data/db
+    command: mongod --bind_ip_all
+
+volumes:
+  mongodb_data:

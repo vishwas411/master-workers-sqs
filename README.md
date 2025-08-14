@@ -170,7 +170,22 @@ npm install
 npm test
 ```
 
-## 🚀 Start (Local Mode)
+## 🚀 Quick Start (Local Mode)
+
+### **1. Start Infrastructure Services**
+
+```bash
+# Using Docker/Podman Compose (Recommended)
+podman-compose up -d
+# or
+docker-compose up -d
+
+# Or run containers individually:
+podman run -d --name localstack-sqs -p 4566:4566 -e SERVICES=sqs localstack/localstack:latest
+podman run -d --name mongodb-masterworkers -p 27017:27017 mongo:7
+```
+
+### **2. Start Application**
 
 ```bash
 # Start with both master and workers (MW mode)
@@ -190,10 +205,18 @@ NODE_ENV=development MODE=W node server.js   # Worker only
 
 ## 📦 Requirements & Dependencies
 
+### **Runtime Requirements**
 - **Node.js** >= 18.x
-- **MongoDB** >= 4.x
-- **LocalStack** (or AWS) for SQS simulation
+- **MongoDB** >= 4.x (or container via Podman/Docker)
+- **LocalStack** (or AWS) for SQS simulation (or container via Podman/Docker)
+
+### **Container Support** 
+- **Podman/Docker** for containerized MongoDB and LocalStack
+- **docker-compose.yml** included for easy service management
+
+### **Node.js Dependencies**
 - **AWS SDK v3** (`@aws-sdk/client-sqs`) - Modern, modular, actively maintained
+- **async** - Concurrency control library for message processing
 - **nconf** - Environment-specific configuration management
 - **MongoDB Driver** - Native MongoDB client for Node.js
 
