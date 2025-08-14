@@ -125,8 +125,35 @@ node sqs.js list                             # List all queues
 node sqs.js send <name> <count>              # Send test messages
 node sqs.js size <name>                      # Check message count
 
-# Concurrency Management (NEW)
+# Concurrency Management
 node sqs.js set-concurrency <name> <1-5>     # Configure queue concurrency
+```
+
+### **📦 NPM Scripts for Development**
+
+```bash
+# Quick Start
+npm start                    # Start MW mode (master + workers)
+npm run setup               # Start infrastructure (./start-services.sh)
+
+# Development
+npm run dev                 # Start with nodemon (hot reload)
+npm run start:master       # Master only
+npm run start:worker       # Worker only
+
+# Database Operations
+npm run db:status           # Check MongoDB status
+npm run db:jobs            # View recent jobs
+npm run db:queues          # View all queues
+
+# Queue Operations  
+npm run queue:create <name> # Create queue
+npm run queue:list          # List queues
+npm run queue:delete <name> # Delete queue
+
+# Cleanup
+npm run cleanup            # Stop all services
+npm test                   # Run test suite
 ```
 
 ## ⚙️ Configuration & Scaling
@@ -170,6 +197,91 @@ npm install
 npm test
 ```
 
+## 🚀 Getting Started (New Developer Setup)
+
+### **📋 Prerequisites**
+
+Before cloning this repository, ensure you have:
+
+1. **Node.js** >= 18.x ([Download](https://nodejs.org/))
+2. **Git** ([Download](https://git-scm.com/downloads))
+3. **Container Runtime** (choose one):
+   - **Podman** ([Install Guide](https://podman.io/getting-started/installation)) - Recommended
+   - **Docker** ([Install Guide](https://docs.docker.com/get-docker/))
+
+### **🔧 Complete Setup Process**
+
+#### **Step 1: Clone Repository**
+```bash
+git clone https://github.com/vishwas411/master-workers-sqs.git
+cd master-workers-sqs-1
+```
+
+#### **Step 2: Install Dependencies**
+```bash
+npm install
+```
+
+#### **Step 3: Environment Configuration**
+```bash
+# Copy example environment file
+cp env/development.json env/local.json
+
+# Edit configuration if needed (optional - defaults work for local development)
+# nano env/development.json
+```
+
+#### **Step 4: Start Infrastructure Services**
+```bash
+# Start LocalStack (SQS) and MongoDB in a unified pod
+./start-services.sh
+
+# Verify services are running
+podman pod ps
+```
+
+#### **Step 5: Start Application**
+```bash
+# Start master and workers (recommended for development)
+NODE_ENV=development MODE=MW node server.js
+
+# Alternative: Start components separately
+# NODE_ENV=development MODE=M node server.js   # Master only
+# NODE_ENV=development MODE=W node server.js   # Worker only
+```
+
+#### **Step 6: Verify Setup**
+```bash
+# Test SQS operations
+node sqs.js create test-queue
+node sqs.js list
+node sqs.js send test-queue 5
+node sqs.js size test-queue
+
+# Check MongoDB
+mongosh masterworkers --eval "show collections"
+```
+
+#### **Step 7: View Jobs Dashboard**
+```bash
+# Check processing jobs in real-time
+mongosh masterworkers --eval "db.jobs.find().sort({createdAt: -1}).limit(5).pretty()"
+
+# Monitor queue assignments
+mongosh masterworkers --eval "db.assignments.find().pretty()"
+```
+
+### **🛑 Cleanup**
+```bash
+# Stop all services
+./stop-services.sh
+
+# Optional: Remove all data (fresh start)
+podman volume rm mongodb_data localstack_data
+```
+
+---
+
 ## 🚀 Quick Start (Local Mode)
 
 ### **1. Start Infrastructure Services**
@@ -207,12 +319,65 @@ NODE_ENV=development MODE=M node server.js   # Master only
 NODE_ENV=development MODE=W node server.js   # Worker only
 ```
 
+## 🐛 Troubleshooting
+
+### **Common Issues**
+
+#### **Services Won't Start**
+```bash
+# Check if ports are already in use
+lsof -i :4566  # LocalStack
+lsof -i :27017 # MongoDB
+
+# Stop conflicting processes
+./stop-services.sh
+podman system prune -a  # Clean all containers
+```
+
+#### **Permission Issues**
+```bash
+# Make scripts executable
+chmod +x start-services.sh stop-services.sh
+
+# Fix Podman permissions (if needed)
+podman system migrate
+```
+
+#### **Database Connection Errors**
+```bash
+# Verify MongoDB is accessible
+mongosh --eval "db.runCommand('ping')" masterworkers
+
+# Check container logs
+podman logs mongodb-masterworkers
+```
+
+#### **SQS Connection Errors**
+```bash
+# Test LocalStack health
+curl http://localhost:4566/_localstack/health
+
+# Check container logs
+podman logs localstack-sqs
+```
+
+### **Development Tips**
+
+- **Hot Reload**: Use `nodemon` for development: `npm install -g nodemon && nodemon server.js`
+- **Debug Mode**: Set `DEBUG=1` environment variable for verbose logging
+- **Test Environment**: Create `env/test.json` for isolated testing
+- **Performance**: Monitor with `podman stats` to check resource usage
+
+---
+
 ## 🔮 Roadmap
 
 - [ ] Add more tests covering failure recovery, job timeout, and SQS errors
 - [ ] Modularize the system into a proper microservice
 - [ ] Add REST API for job and queue inspection
 - [ ] Support multi-master failover architecture for high availability
+- [ ] Add Docker Desktop compose support for Windows/Mac developers
+- [ ] Create development dashboard for real-time monitoring
 
 ## 📦 Requirements & Dependencies
 
