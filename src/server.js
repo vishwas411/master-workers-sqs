@@ -5,7 +5,7 @@ const nconf = require('nconf')
 const { SQSClient, ListQueuesCommand, CreateQueueCommand } = require('@aws-sdk/client-sqs')
 
 const env = process.env.NODE_ENV || 'development'
-nconf.file(path.join(__dirname, `env/${env}.json`))
+nconf.file(path.join(__dirname, `../env/${env}.json`))
 
 const mode = process.env.MODE || 'MW'
 console.log(`Server starting in MODE=${mode}`)
@@ -45,28 +45,24 @@ async function ensureIndexes() {
     await client.connect()
     const db = client.db(dbName)
     
-    // Create unique index on assignments.queueUrl to prevent race conditions
     await db.collection('assignments').createIndex(
       { queueUrl: 1 }, 
       { unique: true, background: true }
     )
     console.log('Ensured unique index on assignments.queueUrl')
 
-    // Create unique index on queues.name to prevent duplicate queue names
     await db.collection('queues').createIndex(
       { name: 1 }, 
       { unique: true, background: true }
     )
     console.log('Ensured unique index on queues.name')
 
-    // Create unique index on queues.queueUrl for faster lookups
     await db.collection('queues').createIndex(
       { queueUrl: 1 }, 
       { unique: true, background: true }
     )
     console.log('Ensured unique index on queues.queueUrl')
 
-    // Create compound indexes for jobs collection
     await db.collection('jobs').createIndex(
       { status: 1, createdAt: -1 },
       { background: true }
@@ -79,7 +75,6 @@ async function ensureIndexes() {
     )
     console.log('Ensured compound index on jobs.queueUrl and jobs.status')
 
-    // Create TTL index for automatic job document cleanup (5 days = 432000 seconds)
     await db.collection('jobs').createIndex(
       { lastModified: 1 },
       { expireAfterSeconds: 432000, background: true }
@@ -119,7 +114,6 @@ async function syncQueues() {
 
     const dbQueues = await queuesCol.find({}).toArray()
 
-    // Create SQS queues for DB queues that don't exist in SQS
     const toCreate = dbQueues.filter(dbQueue => 
       !sqsQueueUrls.includes(dbQueue.queueUrl)
     )
@@ -134,7 +128,6 @@ async function syncQueues() {
           }))
           console.log(`Created SQS queue: ${dbQueue.name}`)
           
-          // Update the queueUrl in DB if it's different (shouldn't happen but safety check)
           if (result.QueueUrl !== dbQueue.queueUrl) {
             await queuesCol.updateOne(
               { _id: dbQueue._id },
@@ -152,7 +145,6 @@ async function syncQueues() {
       }
     }
 
-    // Update syncedAt for existing queues that are already in both DB and SQS
     const existing = dbQueues.filter(dbQueue => 
       sqsQueueUrls.includes(dbQueue.queueUrl)
     )
@@ -184,15 +176,15 @@ async function startServer() {
   }
 
   if (mode.includes('M')) {
-    launch('Master', 'master.js')
+    launch('Master', 'services/master.js')
   }
 
   if (mode === 'W') {
-    launch('Worker', 'worker.js') // Always one in W mode
+    launch('Worker', 'services/worker.js')
   } else if (mode === 'MW') {
     const count = parseInt(nconf.get('WORKER_INSTANCES') || 1)
     for (let i = 0; i < count; i++) {
-      launch(`Worker ${i + 1}`, 'worker.js')
+      launch(`Worker ${i + 1}`, 'services/worker.js')
     }
   }
   

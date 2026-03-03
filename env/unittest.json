@@ -1,0 +1,13 @@
+{
+  "MONGODB_URI": "mongodb://localhost:37018",
+  "MONGODB_NAME": "masterworker_test",
+  "AWS_ACCESS_KEY_ID": "test",
+  "AWS_SECRET_ACCESS_KEY": "test", 
+  "AWS_REGION": "us-east-1",
+  "AWS_SQS_ENDPOINT": "http://localhost:34566",
+  "WORKER_INSTANCES": 1,
+  "MAX_LOAD": 2,
+  "CONSUMER_USAGE_LIMIT": 2,
+  "PORT": 3001,
+  "TEST_MODE": true
+}

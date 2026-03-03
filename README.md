@@ -1,401 +1,248 @@
 # Distributed Queue Processing System
 
-A fault-tolerant distributed worker-consumer system built using **Node.js**, **MongoDB**, and **AWS SQS** (LocalStack for local testing). The system manages dynamic queue assignment, scalable message processing, real-time job tracking, and includes race condition protection for concurrent queue assignments.
+A fault-tolerant distributed worker-consumer system built using **Node.js 22**, **MongoDB**, and **AWS SQS** (LocalStack for local development). The system manages dynamic queue assignment, scalable message processing, real-time job tracking, and includes race condition protection for concurrent queue assignments.
 
-## 🚀 Recent Major Updates
-
-- **Completion-Based Message Counting:** Jobs now update message count once at completion with accurate counts, fixing consumer reuse bugs and reducing IPC overhead
-- **Jobs Tracking System:** Complete lifecycle tracking with automatic cleanup - job documents auto-purge after 5 days
-- **Dynamic Concurrency Control:** Consumers now fetch queue-specific concurrency from database instead of using fixed environment variables
-- **Enhanced Assignment Collection:** Assignment documents include queue ObjectId references for proper data relationships
-- **AWS SDK v3:** Upgraded to modern, modular AWS SDK for better performance and maintenance
-- **Queue Metadata Management:** Complete lifecycle management with concurrency control
-- **One-Way Smart Sync:** DB → SQS sync preserves ObjectIds while ensuring consistency
-- **Enhanced CLI:** Professional queue management with concurrency configuration
-- **nconf Configuration:** Centralized, environment-specific configuration management
-
-## 📌 Features
+## Features
 
 - **Master-Worker Architecture:** A centralized master assigns queues to workers. Each worker manages its own pool of consumers.
-- **Comprehensive Jobs Tracking:** Real-time monitoring of queue processing with detailed lifecycle tracking, performance metrics, and status transitions.
-- **Efficient Message Counting:** Jobs track total processed messages with single database update at completion, supporting consumer reuse and reducing IPC overhead.
-- **Dynamic Concurrency Processing:** Consumers automatically fetch and apply queue-specific concurrency limits from the database, overriding global environment settings.
-- **Enhanced Data Relationships:** Assignment documents include queue ObjectId references, enabling powerful aggregation queries and maintaining data integrity.
-- **Race Condition Protection:** MongoDB unique indexes prevent duplicate queue assignments under high concurrent load.
-- **Queue Metadata Management:** Complete queue lifecycle with concurrency control, creation tracking, and metadata sync.
-- **Smart Queue Sync:** DB → SQS one-way sync preserves MongoDB ObjectIds while creating missing SQS queues from database records.
-- **Worker Load Balancing:** Queues are distributed based on worker load and capped using `MAX_LOAD`.
-- **Auto-Setup:** Database indexes and configuration automatically created on system startup.
-- **Professional CLI:** Clean, emoji-free command interface for production environments.
-- **Modern Dependencies:** AWS SDK v3 with modular imports and improved performance.
+- **Jobs Tracking:** Real-time monitoring of queue processing with lifecycle tracking (queued → running → completed), performance metrics, and automatic cleanup via TTL indexes.
+- **Completion-Based Counting:** Jobs track total processed messages with a single database update at completion, supporting consumer reuse and reducing IPC overhead.
+- **Dynamic Concurrency:** Consumers fetch queue-specific concurrency limits (1-5) from the database at runtime, falling back to a default of 5.
+- **Race Condition Protection:** MongoDB unique indexes on `assignments.queueUrl` prevent duplicate queue assignments under concurrent load.
+- **Queue Metadata Management:** Complete queue lifecycle with concurrency control, creation tracking, and DB → SQS one-way sync that preserves MongoDB ObjectIds.
+- **Worker Load Balancing:** Queues are distributed to the least-loaded worker, capped by `MAX_LOAD`.
+- **Auto-Setup:** Database indexes and configuration are automatically created on startup.
+- **CLI:** Queue management via `src/cli/sqs.js` (create, delete, list, send, size, set-concurrency).
 
-## 🧱 Project Structure
+## Project Structure
 
 ```
 .
-├── master.js          # Assigns queues to least-loaded worker and creates job metadata
-├── worker.js          # Polls DB for assigned queues, forks consumers, manages their lifecycle
-├── consumer.js        # Processes messages in parallel and reports back to worker
-├── server.js          # Entry-point to launch in various modes (Master, Worker, MW)
-├── sqs.js             # Enhanced CLI for queue management (create, delete, send, size, set-concurrency)
-├── env/               # Environment-specific config files (development.json, test.json)
-├── __tests__/         # Mocha-based test suites for master, worker, consumer logic
-└── README.md
+├── src/
+│   ├── server.js              # entry point, launches master/worker based on MODE
+│   ├── services/
+│   │   ├── master.js          # Express API, queue assignment, job creation
+│   │   ├── worker.js          # polls DB for assignments, forks/reuses consumers
+│   │   └── consumer.js        # processes SQS messages in parallel via IPC
+│   └── cli/
+│       └── sqs.js             # CLI for queue management and master notification
+├── config/
+│   └── jest.config.js         # Jest test configuration
+├── scripts/
+│   ├── start-services.sh      # Podman pod setup script
+│   ├── stop-services.sh       # Podman pod teardown script
+│   └── docker-compose.yml     # LocalStack + MongoDB service definitions
+├── env/                       # environment-specific config (development.json, unittest.json)
+└── __tests__/                 # Jest test suites
 ```
 
-## 🗄️ MongoDB Collections
+## Prerequisites
+
+- **Node.js** 22 ([Download](https://nodejs.org/))
+- **Git** ([Download](https://git-scm.com/downloads))
+- **Container Runtime** (one of):
+  - **Podman** ([Install Guide](https://podman.io/getting-started/installation)) — Recommended
+  - **Docker** ([Install Guide](https://docs.docker.com/get-docker/))
+
+```bash
+node --version    # Should show v22.x
+podman --version  # or docker --version
+```
+
+## Getting Started
+
+### 1. Clone and Install
+
+```bash
+git clone https://github.com/vishwas411/master-workers-sqs.git
+cd master-workers-sqs
+npm install
+```
+
+### 2. Start Infrastructure
+
+```bash
+./scripts/start-services.sh
+```
+
+This creates a Podman pod with:
+- **LocalStack** (SQS) on port 4566
+- **MongoDB 7** on port 27017
+
+Verify with `podman pod ps`.
+
+### 3. Start the Application
+
+```bash
+NODE_ENV=development MODE=MW node src/server.js
+```
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| `MW` | `npm start` | Master + Workers (default) |
+| `M`  | `npm run start:master` | Master only |
+| `W`  | `npm run start:worker` | Worker only |
+
+### 4. Test It
+
+```bash
+node src/cli/sqs.js create my-queue
+node src/cli/sqs.js send my-queue 10
+node src/cli/sqs.js size my-queue
+```
+
+### 5. Stop
+
+```bash
+./scripts/stop-services.sh
+```
+
+## MongoDB Collections
 
 ### `queues`
-**NEW:** Persistent queue metadata management
-- `name`, `queueUrl`, `createdAt`, `concurrency` (1-5), `syncedAt`, `updatedAt`
-- **Unique Indexes:** `name` and `queueUrl` prevent duplicates
-- **Purpose:** Central source of truth for queue configuration and concurrency management
 
-### `assignments` (Enhanced with Queue References)
-Tracks queue assignment documents that map queues to workers during processing.
-- **Queue ObjectId References:** Each assignment includes `queueId` linking to the `queues` collection for proper data relationships
-- **Unique Index:** `queueUrl` field prevents duplicate assignments (race condition protection)
-- **Ephemeral:** Documents created during assignment, deleted after message processing
-- **Data Integrity:** Enables complex aggregation queries between assignments and queues collections
+Persistent queue metadata. Each document holds `name`, `queueUrl`, `concurrency` (1-5), `createdAt`, `syncedAt`, `updatedAt`. Unique indexes on `name` and `queueUrl`.
 
-**Example Document:**
-```json
-{
-  "_id": "ObjectId(...)",
-  "queueUrl": "http://localhost:4566/000000000000/orders-queue",
-  "worker": "worker_12345",
-  "queueId": "ObjectId(...)"  // Reference to queues collection
-}
-```
+### `assignments`
+
+Ephemeral queue-to-worker mappings. Created when a queue is assigned, deleted after processing completes. Includes `queueId` referencing the `queues` collection. Unique index on `queueUrl` prevents duplicates.
 
 ### `workers`
+
 Tracks active worker PIDs and their start time.
 
-### `jobs` (NEW - Complete Lifecycle Tracking)
-Comprehensive tracking for all queue processing operations with real-time status monitoring.
+### `jobs`
 
-**Purpose:** Audit trail, performance monitoring, and operational visibility for queue processing.
+Complete lifecycle tracking for every queue processing operation.
 
-**Document Structure:**
 ```json
 {
-  "_id": "ObjectId(...)",
-  "queueName": "orders-processing",
-  "queueUrl": "http://localhost:4566/000000000000/orders-processing",
-  "queueId": "ObjectId(...)",  // Reference to queues collection
-  "status": "running",         // queued | running | completed
-  "messageCount": 23,          // Total messages processed
-  "processor": {
-    "workerPid": "12345",      // Worker that received assignment
-    "consumerPid": "67890"     // Consumer actually processing messages
-  },
-  "createdAt": "2025-08-13T19:13:22.817Z",    // Job creation time
-  "startedAt": "2025-08-13T19:13:45.123Z",    // Processing start time  
-  "endedAt": "2025-08-13T19:14:12.456Z",      // Processing completion time
-  "lastModified": "2025-08-13T19:14:12.456Z"  // Last status update
+  "queueName": "orders",
+  "queueUrl": "http://localhost:4566/000000000000/orders",
+  "queueId": "ObjectId(...)",
+  "status": "completed",
+  "messageCount": 23,
+  "processor": { "workerPid": "12345", "consumerPid": "67890" },
+  "createdAt": "2026-03-01T10:00:00Z",
+  "startedAt": "2026-03-01T10:00:01Z",
+  "endedAt": "2026-03-01T10:00:15Z",
+  "lastModified": "2026-03-01T10:00:15Z"
 }
 ```
 
-**Key Features:**
-- **Status Transitions:** Automatic tracking through queued → running → completed lifecycle
-- **Completion-Based Counting:** Message count updated once at job completion for accuracy and performance
-- **Performance Metrics:** Message counts, processing duration, timing analytics
-- **Process Attribution:** Full traceability of which worker/consumer handled each job
-- **Consumer Reuse Support:** Accurate counting across multiple consumer assignments
-- **Efficient Indexing:** Compound indexes on `{status, createdAt}` and `{queueUrl, status}` for fast queries
-- **Automatic Cleanup:** TTL index automatically purges job documents after 5 days from last modification
+- Status transitions: `queued` → `running` → `completed`
+- Compound indexes on `{status, createdAt}` and `{queueUrl, status}`
+- TTL index on `lastModified` auto-purges documents after 5 days
 
-## 💡 Use Cases
-
-- Event-driven microservices needing parallel SQS message processing
-- Systems requiring queue-specific tracking and audit logs
-- Workload balancing in environments with multiple workers
-
-## ⚙️ Enhanced CLI Commands
-
-The `sqs.js` CLI provides comprehensive queue management:
+## CLI Commands
 
 ```bash
-# Queue Management
-node sqs.js create <name>                    # Create SQS queue
-node sqs.js delete <name>                    # Delete SQS queue  
-node sqs.js list                             # List all queues
-
-# Message Operations  
-node sqs.js send <name> <count>              # Send test messages
-node sqs.js size <name>                      # Check message count
-
-# Concurrency Management
-node sqs.js set-concurrency <name> <1-5>     # Configure queue concurrency
+node src/cli/sqs.js create <name>                  # Create queue (SQS + DB)
+node src/cli/sqs.js delete <name>                  # Delete queue (SQS + DB)
+node src/cli/sqs.js list                           # List all SQS queues
+node src/cli/sqs.js send <name> <count>            # Send test messages + notify master
+node src/cli/sqs.js size <name>                    # Check approximate message count
+node src/cli/sqs.js set-concurrency <name> <1-5>   # Set queue-specific concurrency
 ```
 
-### **📦 NPM Scripts for Development**
+## NPM Scripts
 
 ```bash
-# Quick Start
-npm start                    # Start MW mode (master + workers)
-npm run setup               # Start infrastructure (./start-services.sh)
-
-# Development
-npm run dev                 # Start with nodemon (hot reload)
-npm run start:master       # Master only
-npm run start:worker       # Worker only
-
-# Database Operations
-npm run db:status           # Check MongoDB status
-npm run db:jobs            # View recent jobs
-npm run db:queues          # View all queues
-
-# Queue Operations  
-npm run queue:create <name> # Create queue
-npm run queue:list          # List queues
-npm run queue:delete <name> # Delete queue
-
-# Cleanup
-npm run cleanup            # Stop all services
-npm test                   # Run test suite
+npm start               # MODE=MW (master + workers)
+npm run start:master    # MODE=M
+npm run start:worker    # MODE=W
+npm run setup           # ./scripts/start-services.sh
+npm run cleanup         # ./scripts/stop-services.sh
+npm test                # Run test suite
+npm run test:watch      # Jest watch mode
+npm run test:coverage   # Coverage report
+npm run queue:create    # node src/cli/sqs.js create
+npm run queue:list      # node src/cli/sqs.js list
+npm run queue:delete    # node src/cli/sqs.js delete
+npm run db:status       # MongoDB stats
+npm run db:jobs         # Recent jobs
+npm run db:queues       # All queues
 ```
 
-## ⚙️ Configuration & Scaling
+## Configuration
 
-**Environment Configuration (nconf-based):**
-- All settings managed via `env/development.json`
-- AWS credentials, endpoints, and MongoDB URIs centrally configured
-- Uses **LocalStack** (SQS) for local development, easily switchable to real AWS
-- **Dynamic Concurrency:** Queue-specific concurrency fetched from database
-- Consumer reuse and limit management via `CONSUMER_USAGE_LIMIT`
-- Worker scaling via `WORKER_INSTANCES`
+All settings are managed via `env/<NODE_ENV>.json` using **nconf**:
 
-**Queue-Specific Concurrency Control:**
-- Each queue in the `queues` collection has its own `concurrency` setting (1-5)
-- Consumers automatically fetch and apply these limits at runtime
-- Falls back to default (5) if queue not found in database
-- Configure using: `node sqs.js set-concurrency <queue-name> <concurrency>`
+| Key | Description | Default |
+|-----|-------------|---------|
+| `AWS_REGION` | AWS region | `us-east-1` |
+| `AWS_ACCESS_KEY_ID` | AWS access key | `test` |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key | `test` |
+| `AWS_SQS_ENDPOINT` | SQS endpoint URL | `http://localhost:4566` |
+| `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017` |
+| `MONGODB_NAME` | Database name | `masterworkers` |
+| `PORT` | Master API port | `3000` |
+| `MAX_LOAD` | Max queues per worker | `5` |
+| `CONSUMER_USAGE_LIMIT` | Max assignments per consumer before recycling | `5` |
+| `WORKER_INSTANCES` | Number of worker processes in MW mode | `1` |
 
-## 📈 Message Handling Capacity
+## Testing
 
-- Default concurrency per consumer: 5
-- One worker can spawn up to `MAX_LOAD` consumers (default 5)
-- With 2 workers, the system can process up to **50 messages in parallel** (5 queues × 5 concurrent messages × 2 workers)
-- Can be scaled horizontally by increasing `WORKER_INSTANCES` and running multiple master processes
+The test suite uses **Jest** and validates behavior through **database state and IPC messages** rather than console output, making tests resilient to log message changes.
 
-## 🧪 Comprehensive Testing Suite
-
-**Verified Scenarios:**
-- ✅ Basic SQS Operations (create, delete, list, send, size)
-- ✅ Concurrency Management (set-concurrency with validation)
-- ✅ Master Startup & Database Sync (one-way DB → SQS)
-- ✅ Single Master + Single Worker (message processing)
-- ✅ Multi-Worker Load Balancing (queue distribution)
-- ✅ Race Condition Protection (unique indexes prevent duplicates)
-- ✅ ObjectId Preservation (DB sync maintains MongoDB document IDs)
-- ✅ Error Handling (invalid inputs, missing queues, boundary conditions)
-
-**Run Tests:**
 ```bash
-npm install
 npm test
 ```
 
-## 🚀 Getting Started (New Developer Setup)
+**27 tests across 4 suites:**
 
-### **📋 Prerequisites**
+| Suite | Tests | What's Verified |
+|-------|-------|-----------------|
+| `master.test.js` | 9 | Index creation, job documents, multi-queue assignment, unique constraints, MAX_LOAD enforcement, assignment cleanup, queue prioritization, API availability |
+| `worker.test.js` | 5 | Worker registration in DB, job status lifecycle (queued → completed), message count accuracy, consumer reuse, DB connection error handling |
+| `consumer.test.js` | 5 | Message count via IPC, batch processing (>10 messages), counter reset on consumer reuse, SQS error resilience, malformed message handling |
+| `sqs.test.js` | 8 | Queue CRUD in both SQS and DB, message sending + count verification, concurrency validation, duplicate prevention, non-existent queue handling |
 
-Before cloning this repository, ensure you have:
+## Message Handling Capacity
 
-1. **Node.js** >= 18.x ([Download](https://nodejs.org/))
-2. **Git** ([Download](https://git-scm.com/downloads))
-3. **Container Runtime** (choose one):
-   - **Podman** ([Install Guide](https://podman.io/getting-started/installation)) - Recommended
-   - **Docker** ([Install Guide](https://docs.docker.com/get-docker/))
+- Default concurrency per consumer: **5**
+- Max consumers per worker: **MAX_LOAD** (default 5)
+- With 2 workers: up to **50 messages in parallel** (5 queues x 5 concurrent x 2 workers)
+- Scale horizontally via `WORKER_INSTANCES`
 
-### **🔧 Complete Setup Process**
+## Troubleshooting
 
-#### **Step 1: Clone Repository**
+**Port conflicts:**
 ```bash
-git clone https://github.com/vishwas411/master-workers-sqs.git
-cd master-workers-sqs-1
-```
-
-#### **Step 2: Install Dependencies**
-```bash
-npm install
-```
-
-#### **Step 3: Environment Configuration**
-```bash
-# Copy example environment file
-cp env/development.json env/local.json
-
-# Edit configuration if needed (optional - defaults work for local development)
-# nano env/development.json
-```
-
-#### **Step 4: Start Infrastructure Services**
-```bash
-# Start LocalStack (SQS) and MongoDB in a unified pod
-./start-services.sh
-
-# Verify services are running
-podman pod ps
-```
-
-#### **Step 5: Start Application**
-```bash
-# Start master and workers (recommended for development)
-NODE_ENV=development MODE=MW node server.js
-
-# Alternative: Start components separately
-# NODE_ENV=development MODE=M node server.js   # Master only
-# NODE_ENV=development MODE=W node server.js   # Worker only
-```
-
-#### **Step 6: Verify Setup**
-```bash
-# Test SQS operations
-node sqs.js create test-queue
-node sqs.js list
-node sqs.js send test-queue 5
-node sqs.js size test-queue
-
-# Check MongoDB
-mongosh masterworkers --eval "show collections"
-```
-
-#### **Step 7: View Jobs Dashboard**
-```bash
-# Check processing jobs in real-time
-mongosh masterworkers --eval "db.jobs.find().sort({createdAt: -1}).limit(5).pretty()"
-
-# Monitor queue assignments
-mongosh masterworkers --eval "db.assignments.find().pretty()"
-```
-
-### **🛑 Cleanup**
-```bash
-# Stop all services
-./stop-services.sh
-
-# Optional: Remove all data (fresh start)
-podman volume rm mongodb_data localstack_data
-```
-
----
-
-## 🚀 Quick Start (Local Mode)
-
-### **1. Start Infrastructure Services**
-
-```bash
-# Quick Start (Recommended)
-./start-services.sh
-
-# Stop Services
-./stop-services.sh
-
-# Alternative: Docker/Podman Compose (if available)
-podman-compose up -d  # or docker-compose up -d
-
-# Check service health
-podman pod ps
-podman ps --pod
-```
-
-**Podman Pod Configuration:**
-- **Pod Name**: `masterworkers-pod` (both services share networking)
-- **LocalStack**: SQS simulation on port 4566
-- **MongoDB**: Database on port 27017  
-- **Volumes**: Persistent data storage (`localstack_data`, `mongodb_data`)
-- **Network**: Shared pod network for optimal communication
-
-### **2. Start Application**
-
-```bash
-# Start with both master and workers (MW mode)
-NODE_ENV=development MODE=MW node server.js
-
-# Or start them separately:
-NODE_ENV=development MODE=M node server.js   # Master only
-NODE_ENV=development MODE=W node server.js   # Worker only
-```
-
-## 🐛 Troubleshooting
-
-### **Common Issues**
-
-#### **Services Won't Start**
-```bash
-# Check if ports are already in use
 lsof -i :4566  # LocalStack
 lsof -i :27017 # MongoDB
-
-# Stop conflicting processes
-./stop-services.sh
-podman system prune -a  # Clean all containers
+./scripts/stop-services.sh
 ```
 
-#### **Permission Issues**
+**Container issues:**
 ```bash
-# Make scripts executable
-chmod +x start-services.sh stop-services.sh
-
-# Fix Podman permissions (if needed)
-podman system migrate
-```
-
-#### **Database Connection Errors**
-```bash
-# Verify MongoDB is accessible
-mongosh --eval "db.runCommand('ping')" masterworkers
-
-# Check container logs
+podman ps --pod
 podman logs mongodb-masterworkers
-```
-
-#### **SQS Connection Errors**
-```bash
-# Test LocalStack health
-curl http://localhost:4566/_localstack/health
-
-# Check container logs
 podman logs localstack-sqs
 ```
 
-### **Development Tips**
+**Permission issues:**
+```bash
+chmod +x scripts/start-services.sh scripts/stop-services.sh
+```
 
-- **Hot Reload**: Use `nodemon` for development: `npm install -g nodemon && nodemon server.js`
-- **Debug Mode**: Set `DEBUG=1` environment variable for verbose logging
-- **Test Environment**: Create `env/test.json` for isolated testing
-- **Performance**: Monitor with `podman stats` to check resource usage
+**LocalStack health:**
+```bash
+curl http://localhost:4566/_localstack/health
+```
 
----
+## Dependencies
 
-## 🔮 Roadmap
-
-- [ ] Add more tests covering failure recovery, job timeout, and SQS errors
-- [ ] Modularize the system into a proper microservice
-- [ ] Add REST API for job and queue inspection
-- [ ] Support multi-master failover architecture for high availability
-- [ ] Add Docker Desktop compose support for Windows/Mac developers
-- [ ] Create development dashboard for real-time monitoring
-
-## 📦 Requirements & Dependencies
-
-### **Runtime Requirements**
-- **Node.js** >= 18.x
-- **MongoDB** >= 4.x (or container via Podman/Docker)
-- **LocalStack** (or AWS) for SQS simulation (or container via Podman/Docker)
-
-### **Container Support** 
-- **Podman/Docker** for containerized MongoDB and LocalStack
-- **docker-compose.yml** included for easy service management
-
-### **Node.js Dependencies**
-- **AWS SDK v3** (`@aws-sdk/client-sqs`) - Modern, modular, actively maintained
-- **async** - Concurrency control library for message processing
-- **nconf** - Environment-specific configuration management
-- **MongoDB Driver** - Native MongoDB client for Node.js
+| Package | Purpose |
+|---------|---------|
+| `@aws-sdk/client-sqs` | AWS SQS client (SDK v3) |
+| `async` | Concurrency control for message processing |
+| `express` | Master API HTTP server |
+| `mongodb` | Native MongoDB driver |
+| `nconf` | Environment-specific configuration |
+| `dotenv` | Environment variable loading |
+| `jest` (dev) | Test framework |
 
 ---
 
-This project demonstrates how to build fault-tolerant, distributed, and observable queue processing pipelines in Node.js with extensibility for real-world scale.
+Built to demonstrate fault-tolerant, distributed, and observable queue processing pipelines in Node.js.

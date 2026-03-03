@@ -14,7 +14,7 @@ const {
   GetQueueUrlCommand 
 } = require('@aws-sdk/client-sqs')
 
-nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
+nconf.file(path.join(__dirname, `../../env/${process.env.NODE_ENV || 'development'}.json`))
 
 const sqs = new SQSClient({
   region: nconf.get('AWS_REGION'),
@@ -31,14 +31,14 @@ const [, , command, ...args] = process.argv
 async function createQueue(name) {
   const uri = nconf.get('MONGODB_URI')
   const dbName = nconf.get('MONGODB_NAME')
-  
+  let client
+
   try {
     const result = await sqs.send(new CreateQueueCommand({
       QueueName: name
     }))
     
-    // Also save the queue document to MongoDB
-    const client = new MongoClient(uri)
+    client = new MongoClient(uri)
     await client.connect()
     const db = client.db(dbName)
     const queuesCol = db.collection('queues')
@@ -46,14 +46,13 @@ async function createQueue(name) {
     const queueDocument = {
       name: name,
       queueUrl: result.QueueUrl,
-      concurrency: 5, // default concurrency
+      concurrency: 5,
       createdAt: new Date(),
       updatedAt: new Date(),
       syncedAt: new Date()
     }
     
     await queuesCol.insertOne(queueDocument)
-    await client.close()
     
     console.log(`Created queue '${name}': ${result.QueueUrl}`)
     console.log(`Saved queue document to database with ObjectId: ${queueDocument._id}`)
@@ -63,6 +62,8 @@ async function createQueue(name) {
     } else {
       console.error(`Failed to create queue '${name}':`, err.message)
     }
+  } finally {
+    if (client) await client.close()
   }
 }
 
@@ -74,7 +75,6 @@ async function deleteQueue(name) {
     const url = await getQueueUrl(name)
     await sqs.send(new DeleteQueueCommand({ QueueUrl: url }))
     
-    // Also remove the queue document from MongoDB
     const client = new MongoClient(uri)
     await client.connect()
     const db = client.db(dbName)
@@ -130,16 +130,13 @@ async function fetchQueueDocument(queueName) {
 }
 
 async function notifyMaster(queueName) {
-  // Fetch queue document from database
   let queueDocument = await fetchQueueDocument(queueName)
   
   if (!queueDocument) {
     console.warn(`Queue '${queueName}' not found in database. Constructing minimal queue document.`)
-    // Construct minimal queue document if not found in DB
     queueDocument = {
       name: queueName,
       queueUrl: `${nconf.get('AWS_SQS_ENDPOINT')}/000000000000/${queueName}`,
-      // No _id field - indicates this is a constructed document
     }
   }
 
@@ -150,7 +147,7 @@ async function notifyMaster(queueName) {
 
     const options = {
       hostname: 'localhost',
-      port: 3000,
+      port: parseInt(nconf.get('PORT') || 3000),
       path: '/assign-queue',
       method: 'POST',
       headers: {
@@ -271,8 +268,6 @@ async function setConcurrency(name, concurrency) {
   }
 }
 
-
-
 async function main() {
   switch (command) {
     case 'create':
@@ -297,12 +292,12 @@ async function main() {
     default:
       console.log(`Unknown command: ${command}`)
       console.log(`Usage:
-  node sqs.js create <name>
-  node sqs.js delete <name>
-  node sqs.js list
-  node sqs.js send <name> <count>
-  node sqs.js size <name>
-  node sqs.js set-concurrency <name> <1-5>`)
+  node src/cli/sqs.js create <name>
+  node src/cli/sqs.js delete <name>
+  node src/cli/sqs.js list
+  node src/cli/sqs.js send <name> <count>
+  node src/cli/sqs.js size <name>
+  node src/cli/sqs.js set-concurrency <name> <1-5>`)
   }
 }
 
