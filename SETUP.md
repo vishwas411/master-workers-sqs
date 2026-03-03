@@ -35,7 +35,7 @@ npm install
 ### 3. Start Infrastructure Services
 ```bash
 # This starts both LocalStack (SQS) and MongoDB
-./start-services.sh
+./scripts/start-services.sh
 ```
 
 **Expected output:**
@@ -51,7 +51,7 @@ npm install
 ### 4. Start the Application
 ```bash
 # Start both master and workers (recommended)
-NODE_ENV=development MODE=MW node server.js
+NODE_ENV=development MODE=MW node src/server.js
 ```
 
 **Expected output:**
@@ -69,16 +69,16 @@ Worker Manager (PID xxxx) started. Polling DB for queue assignments...
 ### Test SQS Operations
 ```bash
 # Create a test queue
-node sqs.js create my-first-queue
+node src/cli/sqs.js create my-first-queue
 
 # Send some test messages
-node sqs.js send my-first-queue 10
+node src/cli/sqs.js send my-first-queue 10
 
 # Check queue size
-node sqs.js size my-first-queue
+node src/cli/sqs.js size my-first-queue
 
 # List all queues
-node sqs.js list
+node src/cli/sqs.js list
 ```
 
 ### Check Database Collections
@@ -102,8 +102,8 @@ Run this complete test to verify everything works:
 
 ```bash
 # 1. Create queue and send messages
-node sqs.js create test-workflow
-node sqs.js send test-workflow 5
+node src/cli/sqs.js create test-workflow
+node src/cli/sqs.js send test-workflow 5
 
 # 2. Check processing in MongoDB
 mongosh masterworkers --eval "
@@ -114,7 +114,7 @@ mongosh masterworkers --eval "
 "
 
 # 3. Verify queue is empty after processing
-node sqs.js size test-workflow
+node src/cli/sqs.js size test-workflow
 ```
 
 ## 🛑 Stop Services
@@ -122,16 +122,16 @@ node sqs.js size test-workflow
 When done testing:
 ```bash
 # Stop all infrastructure
-./stop-services.sh
+./scripts/stop-services.sh
 
 # Stop the application (Ctrl+C in terminal)
 ```
 
 ## 🐛 Common Issues
 
-### "Command not found: ./start-services.sh"
+### "Command not found: ./scripts/start-services.sh"
 ```bash
-chmod +x start-services.sh stop-services.sh
+chmod +x scripts/start-services.sh scripts/stop-services.sh
 ```
 
 ### "Port already in use"
@@ -141,7 +141,7 @@ lsof -i :4566  # LocalStack
 lsof -i :27017 # MongoDB
 
 # Stop any conflicting services
-./stop-services.sh
+./scripts/stop-services.sh
 ```
 
 ### "Cannot connect to MongoDB"

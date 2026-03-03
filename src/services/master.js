@@ -3,12 +3,12 @@ const { MongoClient } = require('mongodb')
 const nconf = require('nconf')
 const path = require('path')
 
-nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
+nconf.file(path.join(__dirname, `../../env/${process.env.NODE_ENV || 'development'}.json`))
 
 const MONGO_URI = nconf.get('MONGODB_URI')
 const DB_NAME = nconf.get('MONGODB_NAME')
 
-const PORT = 3000
+const PORT = parseInt(nconf.get('PORT') || 3000)
 const MAX_LOAD = parseInt(nconf.get('MAX_LOAD') || 5)
 
 async function assignQueueToLeastLoadedWorker(queueDocument) {
@@ -72,7 +72,6 @@ async function assignQueueToLeastLoadedWorker(queueDocument) {
       selectedWorker = pid
     }
   }
-
 
   if (!selectedWorker) {
     await client.close()
@@ -149,7 +148,6 @@ app.post('/assign-queue', async (req, res) => {
 
   res.json(result)
 })
-
 
 app.listen(PORT, () => {
   console.log(`Master API running at http://localhost:${PORT}`)

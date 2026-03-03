@@ -4,7 +4,7 @@ const async = require('async')
 const { SQSClient, DeleteMessageCommand, ReceiveMessageCommand } = require('@aws-sdk/client-sqs')
 const { MongoClient } = require('mongodb')
 
-nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
+nconf.file(path.join(__dirname, `../../env/${process.env.NODE_ENV || 'development'}.json`))
 
 const sqs = new SQSClient({
   region: nconf.get('AWS_REGION'),
@@ -31,7 +31,6 @@ async function processMessage(message) {
   
   try {
     console.log(`Consumer ${process.pid} processing:`, message.Body)
-    // Random processing time between 1-5 seconds for better concurrency testing
     const processingTime = Math.floor(Math.random() * 4000) + 1000
     await new Promise(resolve => setTimeout(resolve, processingTime))
 
@@ -88,7 +87,6 @@ async function pollMessages() {
     if (data.Messages && data.Messages.length > 0) {
       isProcessing = true
       
-      // Use async.eachLimit for concurrency control
       const batchSize = data.Messages.length
       await new Promise((resolve, reject) => {
         async.eachLimit(data.Messages, queueConcurrency, async (message) => {
@@ -150,7 +148,6 @@ process.on('message', async msg => {
     
     console.log(`Consumer ${process.pid} assigned assignment ${currentAssignmentId} with concurrency ${queueConcurrency}`)
     
-    // Notify worker that processing has started
     process.send({ type: 'started', assignmentId: currentAssignmentId, consumerPid: process.pid })
     
     pollMessages()

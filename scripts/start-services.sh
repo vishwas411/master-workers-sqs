@@ -1,12 +1,9 @@
 #!/bin/bash
 
-# Start Infrastructure Services for Master-Workers-SQS
 echo "🚀 Starting Master-Workers infrastructure services..."
 
-# Create pod for both services
 podman pod create --name masterworkers-pod -p 4566:4566 -p 27017:27017
 
-# Start LocalStack (SQS)
 echo "📦 Starting LocalStack (SQS)..."
 podman run -d --pod masterworkers-pod --name localstack-sqs \
   -e SERVICES=sqs \
@@ -16,18 +13,15 @@ podman run -d --pod masterworkers-pod --name localstack-sqs \
   -v localstack_data:/var/lib/localstack \
   localstack/localstack:latest
 
-# Start MongoDB
 echo "📦 Starting MongoDB..."
 podman run -d --pod masterworkers-pod --name mongodb-masterworkers \
   -e MONGO_INITDB_DATABASE=masterworkers \
   -v mongodb_data:/data/db \
   mongo:7 mongod --bind_ip_all
 
-# Wait for services to start
 echo "⏳ Waiting for services to initialize..."
 sleep 5
 
-# Check LocalStack health
 echo "🔍 Checking LocalStack status..."
 if curl -s http://localhost:4566/_localstack/health > /dev/null 2>&1; then
   echo "✅ LocalStack (SQS) is ready on port 4566"
@@ -35,7 +29,6 @@ else
   echo "❌ LocalStack not ready yet, may need more time"
 fi
 
-# Check MongoDB
 echo "🔍 Checking MongoDB status..."
 if mongosh --eval "db.runCommand('ping')" masterworkers --quiet > /dev/null 2>&1; then
   echo "✅ MongoDB is ready on port 27017"
@@ -49,4 +42,4 @@ echo "   LocalStack: http://localhost:4566"
 echo "   MongoDB:    mongodb://localhost:27017/masterworkers"
 echo ""
 echo "📊 Check status with: podman pod ps"
-echo "🛑 Stop all with:     ./stop-services.sh"
+echo "🛑 Stop all with:     ./scripts/stop-services.sh"

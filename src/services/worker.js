@@ -3,7 +3,7 @@ const { MongoClient, ObjectId } = require('mongodb')
 const path = require('path')
 const nconf = require('nconf')
 
-nconf.file(path.join(__dirname, `env/${process.env.NODE_ENV || 'development'}.json`))
+nconf.file(path.join(__dirname, `../../env/${process.env.NODE_ENV || 'development'}.json`))
 
 const MONGO_URI = nconf.get('MONGODB_URI')
 const DB_NAME = nconf.get('MONGODB_NAME')
@@ -65,7 +65,6 @@ async function startWorkerManager() {
                 if (assignmentData) {
                   console.log(`Consumer PID ${msg.consumerPid} started processing assignment ${msg.assignmentId}`)
                   
-                  // Update job status to running
                   await jobsCol.updateOne(
                     { queueUrl: assignmentData.queueUrl, status: 'queued' },
                     { 
